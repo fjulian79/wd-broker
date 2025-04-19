@@ -1,27 +1,36 @@
-# Build artifacts
+# Editor-specific files
+.vscode/
+
+# Object and binary output
 *.o
 *.lo
 *.la
 *.al
 .libs/
-.deps/
-*.obj
-*.exe
-*.out
+*.so
+*.so.*
+*.a
+*.d
+
+# Build output
+wd-broker
+src/.dirstamp
+src/.deps/
 
 # Autotools generated files
 Makefile
 Makefile.in
 aclocal.m4
 autom4te.cache/
-config.h
-config.h.in
+configure
+config.h*
 config.log
 config.status
-configure
 depcomp
 install-sh
 missing
+stamp-h1
+compile
 ltmain.sh
 m4/libtool.m4
 m4/lt*.m4
