@@ -20,6 +20,11 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 - Uses `timerfd` for precise and decoupled watchdog ticking
 
 ---
+## Threat Model
+
+[![Security: STRIDE Threat Model](https://img.shields.io/badge/security-STRIDE-blue)](doc/ThreatModel.md)
+
+For a detailed analysis of the system’s trust boundaries and mitigations, refer to the full threat model: [Threat Model (STRIDE)](doc/ThreatModel.md)
 
 ## Usage
 
