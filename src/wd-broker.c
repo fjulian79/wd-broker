@@ -41,7 +41,8 @@
  
  #include "config.h"  // for PACKAGE_VERSION
  
- #define SOCKET_PATH "/tmp/wd-broker.sock"
+ #define SOCKET_PATH_DEFAULT "/tmp/wd-broker.sock"
+ #define SOCKET_PATH_TEST "/tmp/wd-broker-test.sock"
  #define MAX_CLIENTS 64
  #define CLIENTID_LEN 9
  #define BUF_SIZE 128
@@ -56,6 +57,7 @@
      int active;
  } client_t;
  
+ char *socket_path = SOCKET_PATH_DEFAULT;
  client_t clients[MAX_CLIENTS];
  int watchdog_fd = -1;
  int running = 1;
@@ -198,21 +200,23 @@
          fclose(stdout);
          fclose(stderr);
      } else {
+         socket_path = SOCKET_PATH_TEST;
          printf("Running in test mode. /dev/watchdog will not be used.\n");
+         printf("Using socket path: %s\n", socket_path);
      }
  
      srand(time(NULL));
      signal(SIGINT, signal_handler);
      signal(SIGTERM, signal_handler);
  
-     unlink(SOCKET_PATH);
+     unlink(socket_path);
      int server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
      struct sockaddr_un addr = {.sun_family = AF_UNIX};
-     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path)-1);
+     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path)-1);
      bind(server_sock, (struct sockaddr*)&addr, sizeof(addr));
      listen(server_sock, 5);
  
-     chmod(SOCKET_PATH, 0666);
+     chmod(socket_path, 0666);
  
      if (!test_mode) {
          watchdog_fd = open("/dev/watchdog", O_WRONLY);
@@ -277,7 +281,7 @@
          close(watchdog_fd);
      }
      close(timer_fd);
-     unlink(SOCKET_PATH);
+     unlink(socket_path);
      return 0;
  }
  
