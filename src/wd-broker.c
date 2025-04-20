@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -53,18 +54,18 @@
 typedef struct {
     char clientID[CLIENTID_LEN];
     char name[64];
-    int timeout_ms;
+    uint32_t timeout_ms;
     struct timespec last_ping;
-    int active;
+    bool active;
 } client_t;
 
 char *socket_path = SOCKET_PATH_DEFAULT;
 client_t clients[MAX_CLIENTS];
 int watchdog_fd = -1;
-int running = 1;
-int watchdog_enabled = 0;
-int test_mode = 0;
-int loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
+volatile bool running = true;
+bool watchdog_enabled = false;
+bool test_mode = false;
+uint32_t loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
 
 void print_help(const char *progname) {
     printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
@@ -77,7 +78,7 @@ void print_help(const char *progname) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    for (int i = 0; i < CLIENTID_LEN - 1; ++i) {
+    for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
         clientID_out[i] = hex[rand() % 16];
     }
     clientID_out[CLIENTID_LEN - 1] = '\0';
@@ -87,14 +88,14 @@ void get_now(struct timespec *ts) {
     clock_gettime(CLOCK_MONOTONIC, ts);
 }
 
-long ms_since(struct timespec *then) {
+uint32_t ms_since(struct timespec *then) {
     struct timespec now;
     get_now(&now);
     return (now.tv_sec - then->tv_sec) * 1000 + (now.tv_nsec - then->tv_nsec) / 1000000;
 }
 
 void signal_handler(int sig) {
-    running = 0;
+    running = false;
 }
 
 void write_or_log(int fd, const char *msg, size_t len) {
@@ -110,22 +111,23 @@ void write_str(int fd, const char *msg) {
  
 void handle_command(int client_sock) {
     char buf[BUF_SIZE];
-    int len = read(client_sock, buf, sizeof(buf)-1);
+    char clientID[CLIENTID_LEN];
+    ssize_t len = read(client_sock, buf, sizeof(buf)-1);
     if (len <= 0) return;
     buf[len] = '\0';
 
     if (strncmp(buf, "REGISTER ", 9) == 0) {
         char name[64];
-        int timeout;
-        if (sscanf(buf + 9, "%63s %d", name, &timeout) != 2) {
+        int tmp_timeout;
+        if (sscanf(buf + 9, "%63s %d", name, &tmp_timeout) != 2) {
             write_str(client_sock, "ERROR invalid REGISTER\n");
             return;
         }
-        for (int i = 0; i < MAX_CLIENTS; ++i) {
+        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (!clients[i].active) {
-                clients[i].active = 1;
+                clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name)-1);
-                clients[i].timeout_ms = timeout;
+                clients[i].timeout_ms = (uint32_t)tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
                 printf("INFO: client '%s' registered with timeout %d ms (clientID=%s)\n",
@@ -137,9 +139,8 @@ void handle_command(int client_sock) {
         write_str(client_sock, "ERROR too many clients\n");
     }
     else if (strncmp(buf, "PING ", 5) == 0) {
-        char clientID[CLIENTID_LEN];
         sscanf(buf + 5, "%8s", clientID);
-        for (int i = 0; i < MAX_CLIENTS; ++i) {
+        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
                 get_now(&clients[i].last_ping);
                 write_str(client_sock, "OK\n");
@@ -149,13 +150,12 @@ void handle_command(int client_sock) {
         write_str(client_sock, "ERROR unknown clientID\n");
     }
     else if (strncmp(buf, "UNREGISTER ", 11) == 0) {
-        char clientID[CLIENTID_LEN];
         sscanf(buf + 11, "%8s", clientID);
-        for (int i = 0; i < MAX_CLIENTS; ++i) {
+        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
                 printf("INFO: client '%s' unregistered (clientID=%s)\n",
                        clients[i].name, clients[i].clientID);
-                clients[i].active = 0;
+                clients[i].active = false;
                 write_str(client_sock, "OK\n");
                 return;
             }
@@ -167,7 +167,7 @@ void handle_command(int client_sock) {
 }
 
 int main(int argc, char *argv[]) {
-    int all_ok = 1;
+    bool all_ok = true;
     static struct option long_options[] = {
         {"test", no_argument, 0, 't'},
         {"help", no_argument, 0, 'h'},
@@ -175,11 +175,11 @@ int main(int argc, char *argv[]) {
         {"interval", required_argument, 0, 'i'},
         {0, 0, 0, 0}
     };
-    int opt;
 
+    int opt;
     while ((opt = getopt_long(argc, argv, "thvi:", long_options, NULL)) != -1) {
         switch (opt) {
-            case 't': test_mode = 1; break;
+            case 't': test_mode = true; break;
             case 'h': print_help(argv[0]); return 0;
             case 'v': printf("wd-broker v%s\n", PACKAGE_VERSION); return 0;
             case 'i': loop_interval_ms = atoi(optarg); break;
@@ -229,7 +229,7 @@ int main(int argc, char *argv[]) {
     if (!test_mode) {
         watchdog_fd = open("/dev/watchdog", O_WRONLY);
         if (watchdog_fd >= 0) {
-            watchdog_enabled = 1;
+            watchdog_enabled = true;
         } else {
             perror("Failed to open /dev/watchdog");
             exit(EXIT_FAILURE);
@@ -265,13 +265,13 @@ int main(int argc, char *argv[]) {
                uint64_t expirations;
                 read(timer_fd, &expirations, sizeof(expirations));
 
-                for (int i = 0; i < MAX_CLIENTS; ++i) {
+                for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
                     if (clients[i].active) {
-                        long age = ms_since(&clients[i].last_ping);
+                        uint32_t age = ms_since(&clients[i].last_ping);
                         if (age > clients[i].timeout_ms) {
-                            printf("WARNING: client '%s' (clientID=%s) missed heartbeat (%ld ms > %d ms)\n",
+                            printf("WARNING: client '%s' (clientID=%s) missed heartbeat (%u ms > %d ms)\n",
                                    clients[i].name, clients[i].clientID, age, clients[i].timeout_ms);
-                            all_ok = 0;
+                            all_ok = false;
                             break;
                         }
                     }
