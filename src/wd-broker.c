@@ -168,6 +168,8 @@
  }
  
  int main(int argc, char *argv[]) {
+     int all_ok = 1;
+
      static struct option long_options[] = {
          {"test", no_argument, 0, 't'},
          {"help", no_argument, 0, 'h'},
@@ -243,7 +245,7 @@
      };
      timerfd_settime(timer_fd, 0, &its, NULL);
  
-     while (running) {
+     while (running && all_ok) {
          fd_set fds;
          FD_ZERO(&fds);
          FD_SET(server_sock, &fds);
@@ -265,7 +267,6 @@
                 uint64_t expirations;
                  read(timer_fd, &expirations, sizeof(expirations));
  
-                 int all_ok = 1;
                  for (int i = 0; i < MAX_CLIENTS; ++i) {
                      if (clients[i].active) {
                          long age = ms_since(&clients[i].last_ping);
@@ -278,9 +279,25 @@
                      }
                  }
                  if (watchdog_enabled && all_ok) {
+                     // Feed the watchdog
                      write(watchdog_fd, "V", 1);
                  }
              }
+         }
+     }
+
+     if (!all_ok) {
+        /* Have been kicked out of the main loop because of a client timeout.
+         * Close the socket and wait for external termination, ether by the 
+         * intentional reset if the watchdog is enabled or by the user 
+         * termination in test mode, makes not differnece at this point.
+         * */
+         printf("ERROR: CLIENT HEARTBEAT TIMEOUT OCCURED, SYSTEM RESET PENDING!\n");
+         fflush(stdout);
+         close(timer_fd);
+         unlink(socket_path);
+         while(running) {
+             sleep(1);
          }
      }
  

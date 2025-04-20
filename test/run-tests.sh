@@ -18,7 +18,7 @@ start_broker() {
         if [ -S "$SOCKET" ]; then
             return 0
         fi
-        if ! kill -0 $BROKER_PID 2>/dev/null; then
+        if ! kill -0 "$BROKER_PID" 2>/dev/null; then
             echo "[ERROR] Broker process exited unexpectedly!"
             cat "$LOG"
             return 1
@@ -34,9 +34,13 @@ start_broker() {
 
 stop_broker() {
     if [ -n "$BROKER_PID" ]; then
-        kill "$BROKER_PID" 2>/dev/null || true
-        wait "$BROKER_PID" 2>/dev/null || true
-        echo "[INFO] Broker killed, PID: $BROKER_PID"
+        if kill -0 "$BROKER_PID" 2>/dev/null; then
+            kill "$BROKER_PID" 2>/dev/null || true
+            wait "$BROKER_PID" 2>/dev/null || true
+            echo "[INFO] Broker killed, PID: $BROKER_PID"
+        else
+            echo "[INFO] Broker process $BROKER_PID already terminated"
+        fi
         unset BROKER_PID
     fi
 }
@@ -50,21 +54,22 @@ run_test() {
 
     start_broker
     if [ $? -ne 0 ]; then
-        echo "[FAIL] $test_name (broker startup failed)"
+        echo "[FAILED] $test_name (broker startup failed)"
         FAILED=$((FAILED + 1))
         return
     fi
 
-    python3 "$test_file"
-    local status=$?
+    local status=0
+    BROKER_LOG="$LOG" python3 "$test_file"
+    status=$?
 
     stop_broker
 
     if [ $status -eq 0 ]; then
-        echo "[ OK ] $test_name"
+        echo "[PASSED] $test_name"
         PASSED=$((PASSED + 1))
     else
-        echo "[FAIL] $test_name (exit code $status)"
+        echo "[FAILED] $test_name (exit code $status)"
         echo "[DEBUG] Broker log:"
         cat "$LOG"
         FAILED=$((FAILED + 1))
