@@ -46,7 +46,9 @@
  #define MAX_CLIENTS 64
  #define CLIENTID_LEN 9
  #define BUF_SIZE 128
- #define DEFAULT_LOOP_INTERVAL_MS 1000  // 1 second granularity
+ #define LOOP_INTERVAL_DEFAULT_MS 1000
+ #define LOOP_INTERVAL_MIN_MS LOOP_INTERVAL_DEFAULT_MS
+ #define LOOP_INTERVAL_MAX_MS 60000
  
  // Struct for registered clients
  typedef struct {
@@ -63,13 +65,13 @@
  int running = 1;
  int watchdog_enabled = 0;
  int test_mode = 0;
- int loop_interval_ms = DEFAULT_LOOP_INTERVAL_MS;
+ int loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
  
  void print_help(const char *progname) {
      printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
      printf("\nOptions:\n");
      printf("  --test             Run in test mode (no /dev/watchdog access)\n");
-     printf("  --interval <ms>    Set loop interval in milliseconds (default: %d)\n", DEFAULT_LOOP_INTERVAL_MS);
+     printf("  --interval <ms>    Set loop interval in milliseconds (default: %d)\n", LOOP_INTERVAL_DEFAULT_MS);
      printf("  --help             Show this help message\n");
      printf("  --version          Show version information\n");
  }
@@ -184,7 +186,13 @@
              default: print_help(argv[0]); return 1;
          }
      }
- 
+     
+     if (loop_interval_ms < LOOP_INTERVAL_MIN_MS || loop_interval_ms > LOOP_INTERVAL_MAX_MS) {
+         fprintf(stderr, "Error: Loop interval must be between %d and %d ms.\n", 
+                 LOOP_INTERVAL_MIN_MS, LOOP_INTERVAL_MAX_MS);
+         return(EXIT_FAILURE);
+     }
+
      if (!test_mode) {
          pid_t pid = fork();
          if (pid < 0) {
