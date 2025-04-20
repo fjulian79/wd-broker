@@ -12,12 +12,12 @@ def send(cmd):
 
 # Registrieren mit kurzem Timeout (2 Sekunden)
 reply = send("REGISTER lazyclient 2000\n")
-uid = reply.split()[1]
-print("Registered as:", uid)
+clientID = reply.split()[1]
+print("Registered as:", clientID)
 
 # Einmal PING (dann nichts mehr)
 print("Sending 1st PING...")
-print("Reply:", send(f"PING {uid}\n"))
+print("Reply:", send(f"PING {clientID}\n"))
 
 # Nun WARTEN bis Timeout überschritten ist
 print("Waiting 5 seconds to trigger timeout...")
@@ -25,8 +25,8 @@ time.sleep(5)
 
 # Dann nochmal PING – sollte dennoch akzeptiert werden (Broker bleibt leise)
 print("Sending late PING...")
-print("Reply:", send(f"PING {uid}\n"))
+print("Reply:", send(f"PING {clientID}\n"))
 
 # Zum Abschluss abmelden
 print("Unregistering...")
-print("Reply:", send(f"UNREGISTER {uid}\n"))
+print("Reply:", send(f"UNREGISTER {clientID}\n"))

@@ -43,13 +43,13 @@
  
  #define SOCKET_PATH "/tmp/wd-broker.sock"
  #define MAX_CLIENTS 64
- #define UID_LEN 9
+ #define CLIENTID_LEN 9
  #define BUF_SIZE 128
  #define DEFAULT_LOOP_INTERVAL_MS 1000  // 1 second granularity
  
  // Struct for registered clients
  typedef struct {
-     char uid[UID_LEN];
+     char clientID[CLIENTID_LEN];
      char name[64];
      int timeout_ms;
      struct timespec last_ping;
@@ -72,12 +72,12 @@
      printf("  --version          Show version information\n");
  }
  
- void make_uid(char *uid_out) {
+ void make_clientID(char *clientID_out) {
      static const char hex[] = "0123456789abcdef";
-     for (int i = 0; i < UID_LEN - 1; ++i) {
-         uid_out[i] = hex[rand() % 16];
+     for (int i = 0; i < CLIENTID_LEN - 1; ++i) {
+         clientID_out[i] = hex[rand() % 16];
      }
-     uid_out[UID_LEN - 1] = '\0';
+     clientID_out[CLIENTID_LEN - 1] = '\0';
  }
  
  void get_now(struct timespec *ts) {
@@ -124,40 +124,40 @@
                  strncpy(clients[i].name, name, sizeof(clients[i].name)-1);
                  clients[i].timeout_ms = timeout;
                  get_now(&clients[i].last_ping);
-                 make_uid(clients[i].uid);
-                 printf("INFO: client '%s' registered with timeout %d ms (uid=%s)\n",
-                        clients[i].name, clients[i].timeout_ms, clients[i].uid);
-                 dprintf(client_sock, "OK %s\n", clients[i].uid);
+                 make_clientID(clients[i].clientID);
+                 printf("INFO: client '%s' registered with timeout %d ms (clientID=%s)\n",
+                        clients[i].name, clients[i].timeout_ms, clients[i].clientID);
+                 dprintf(client_sock, "OK %s\n", clients[i].clientID);
                  return;
              }
          }
          write_str(client_sock, "ERROR too many clients\n");
      }
      else if (strncmp(buf, "PING ", 5) == 0) {
-         char uid[UID_LEN];
-         sscanf(buf + 5, "%8s", uid);
+         char clientID[CLIENTID_LEN];
+         sscanf(buf + 5, "%8s", clientID);
          for (int i = 0; i < MAX_CLIENTS; ++i) {
-             if (clients[i].active && strncmp(clients[i].uid, uid, UID_LEN) == 0) {
+             if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
                  get_now(&clients[i].last_ping);
                  write_str(client_sock, "OK\n");
                  return;
              }
          }
-         write_str(client_sock, "ERROR unknown uid\n");
+         write_str(client_sock, "ERROR unknown clientID\n");
      }
      else if (strncmp(buf, "UNREGISTER ", 11) == 0) {
-         char uid[UID_LEN];
-         sscanf(buf + 11, "%8s", uid);
+         char clientID[CLIENTID_LEN];
+         sscanf(buf + 11, "%8s", clientID);
          for (int i = 0; i < MAX_CLIENTS; ++i) {
-             if (clients[i].active && strncmp(clients[i].uid, uid, UID_LEN) == 0) {
-                 printf("INFO: client '%s' unregistered (uid=%s)\n",
-                        clients[i].name, clients[i].uid);
+             if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
+                 printf("INFO: client '%s' unregistered (clientID=%s)\n",
+                        clients[i].name, clients[i].clientID);
                  clients[i].active = 0;
                  write_str(client_sock, "OK\n");
                  return;
              }
          }
-         write_str(client_sock, "ERROR unknown uid\n");
+         write_str(client_sock, "ERROR unknown clientID\n");
      } else {
          write_str(client_sock, "ERROR unknown command\n");
      }
@@ -258,8 +258,8 @@
                      if (clients[i].active) {
                          long age = ms_since(&clients[i].last_ping);
                          if (age > clients[i].timeout_ms) {
-                             printf("WARNING: client '%s' (uid=%s) missed heartbeat (%ld ms > %d ms)\n",
-                                    clients[i].name, clients[i].uid, age, clients[i].timeout_ms);
+                             printf("WARNING: client '%s' (clientID=%s) missed heartbeat (%ld ms > %d ms)\n",
+                                    clients[i].name, clients[i].clientID, age, clients[i].timeout_ms);
                              all_ok = 0;
                              break;
                          }
