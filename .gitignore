@@ -13,7 +13,7 @@
 *.d
 
 # Build output
-wd-broker
+wd-broker*
 src/.dirstamp
 src/.deps/
 

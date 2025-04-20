@@ -6,7 +6,6 @@
 
 Designed for **reliability-critical systems**, `wd-broker` ensures that the hardware watchdog only gets fed when **all registered clients are responsive** – enabling true system resets when necessary.
 
----
 
 ## Features
 
@@ -19,7 +18,7 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 - Clean and efficient implementation in portable C (POSIX)
 - Uses `timerfd` for precise and decoupled watchdog ticking
 
----
+
 ## Threat Model
 
 [![Security: STRIDE Threat Model](https://img.shields.io/badge/security-STRIDE-blue)](doc/ThreatModel.md)
@@ -45,7 +44,10 @@ For a detailed analysis of the system’s trust boundaries and mitigations, refe
 - `--version`: show version
 - `--help`: show usage info
 
----
+
+## Testing
+
+`wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
 
 ## Protocol
 
