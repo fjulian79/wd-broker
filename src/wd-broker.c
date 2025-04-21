@@ -49,7 +49,6 @@
 #define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
 #define SOCKET_READ_TIMEOUT_MS   200
 #define MAX_CLIENTS              64
-#define CLIENTID_LEN             9
 #define BUF_SIZE                 128
 #define LOOP_INTERVAL_DEFAULT_MS 1000
 #define LOOP_INTERVAL_MIN_MS     LOOP_INTERVAL_DEFAULT_MS
@@ -57,6 +56,10 @@
 #define CLIENT_NAME_LEN          64
 #define CLIENT_NAME_FMT_LEN_STR  "63" // cant use (CLIENT_NAME_LEN - 1) here
 #define REGISTER_SCANF_FORMAT    "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
+#define CLIENTID_LEN             9
+#define CLIENTID_FMT_LEN_NUM     8 // CLIENTID_LEN - 1
+#define CLIENTID_FMT_LEN_STR     STR(CLIENTID_FMT_LEN_NUM)
+#define PING_SCANF_FORMAT        "%" CLIENTID_FMT_LEN_STR "s %15s"
 #define CLIENT_TIMEOUT_MIN_MS    LOOP_INTERVAL_MIN_MS
 #define CLIENT_TIMEOUT_MAX_MS    LOOP_INTERVAL_MAX_MS
 #define CMD_REGISTER             "REGISTER "
@@ -133,7 +136,7 @@ void handle_command(int client_sock) {
 
     /* Mandatory to avoid blocking in read when the a cleint does not send any inputs */
     setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout));
-    
+
     len = read(client_sock, buf, sizeof(buf) - 1);
     if (len <= 0) {
         write_str(client_sock, "ERROR no input\n");
@@ -184,16 +187,52 @@ void handle_command(int client_sock) {
         }
 
         write_str(client_sock, "ERROR too many clients\n");
-    } else if (strncmp(buf, "PING ", 5) == 0) {
-        sscanf(buf + 5, "%8s", clientID);
+    } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
+        char clientID_raw[CLIENTID_LEN];
+        char extra[16];
+        int  n = sscanf(buf + strlen(CMD_PING), PING_SCANF_FORMAT, clientID_raw, extra);
+
+        /* Try to match exactly one argument, and reject trailing garbage */
+        if (n != 1) {
+            write_str(client_sock, "ERROR invalid PING syntax\n");
+            return;
+        }
+
+        /* Validate clientID format */
+        size_t id_len = strlen(clientID_raw);
+        if (id_len != CLIENTID_FMT_LEN_NUM) {
+            write_str(client_sock, "ERROR invalid clientID length\n");
+            return;
+        }
+
+        /* Check if clientID is a valid hex string */
+        for (size_t i = 0; i < id_len; ++i) {
+            if (!isxdigit((unsigned char)clientID_raw[i])) {
+                write_str(client_sock, "ERROR invalid clientID format\n");
+                return;
+            }
+        }
+
+        /* Convert clientID to lowercase */
+        char clientID[CLIENTID_LEN];
+        for (size_t i = 0; i < id_len; ++i) {
+            clientID[i] = (char)tolower((unsigned char)clientID_raw[i]);
+        }
+        clientID[id_len] = '\0';
+
+        /* Check if clientID is registered and confirm the PING if so */
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
-            if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
+            if (clients[i].active &&
+                strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
                 get_now(&clients[i].last_ping);
                 write_str(client_sock, "OK\n");
                 return;
             }
         }
+
+        /* If we reach this point, the clientID is not registered */
         write_str(client_sock, "ERROR unknown clientID\n");
+
     } else if (strncmp(buf, "UNREGISTER ", 11) == 0) {
         sscanf(buf + 11, "%8s", clientID);
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
