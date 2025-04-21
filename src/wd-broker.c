@@ -47,6 +47,7 @@
 #define STR(x)                   STR_HELPER(x)
 #define SOCKET_PATH_DEFAULT      "/tmp/wd-broker.sock"
 #define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
+#define SOCKET_READ_TIMEOUT_MS   200
 #define MAX_CLIENTS              64
 #define CLIENTID_LEN             9
 #define BUF_SIZE                 128
@@ -122,10 +123,20 @@ void write_str(int fd, const char *msg) {
 }
 
 void handle_command(int client_sock) {
-    char    buf[BUF_SIZE];
-    char    clientID[CLIENTID_LEN];
-    ssize_t len = read(client_sock, buf, sizeof(buf) - 1);
+    char           buf[BUF_SIZE];
+    char           clientID[CLIENTID_LEN];
+    ssize_t        len = 0;
+    struct timeval recv_timeout = {
+        .tv_sec = 0,
+        .tv_usec = SOCKET_READ_TIMEOUT_MS * 100,
+    };
+
+    /* Mandatory to avoid blocking in read when the a cleint does not send any inputs */
+    setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout));
+    
+    len = read(client_sock, buf, sizeof(buf) - 1);
     if (len <= 0) {
+        write_str(client_sock, "ERROR no input\n");
         return;
     }
     buf[len] = '\0';
