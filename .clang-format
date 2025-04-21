@@ -1,0 +1,17 @@
+# .clang-format
+
+BasedOnStyle: LLVM
+IndentWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+AllowShortIfStatementsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+ColumnLimit: 100
+PointerAlignment: Right
+IndentCaseLabels: true
+BraceWrapping:
+  BeforeElse: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true
+
+AlignArrayOfStructures: None

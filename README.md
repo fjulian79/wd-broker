@@ -18,12 +18,16 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 - Clean and efficient implementation in portable C (POSIX)
 - Uses `timerfd` for precise and decoupled watchdog ticking
 
+## Security
 
-## Threat Model
-
-[![Security: STRIDE Threat Model](https://img.shields.io/badge/security-STRIDE-blue)](doc/ThreatModel.md)
+For details on security issues, reporting vulnerabilities, and responsible disclosure, see the [Security Policy](.github/SECURITY.md).
 
 For a detailed analysis of the system’s trust boundaries and mitigations, refer to the full threat model: [Threat Model (STRIDE)](doc/ThreatModel.md)
+
+## Contributing
+
+Any kind of contribution (issues, pull requests or just feedback) is welcome!  
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 ## Usage
 
@@ -44,11 +48,6 @@ For a detailed analysis of the system’s trust boundaries and mitigations, refe
 - `--version`: show version
 - `--help`: show usage info
 
-
-## Testing
-
-`wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
-
 ## Protocol
 
 Clients talk to the broker via a Unix domain socket (`/tmp/wd-broker.sock`).\
@@ -58,17 +57,12 @@ The protocol is simple and line-based:
 - `PING <uid>` → responds with `OK` or `ERROR`
 - `UNREGISTER <uid>` → responds with `OK` or `ERROR`
 
----
+## Testing
+
+`wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
 
 ## License
 
 This project is licensed under the terms of the **GNU General Public License v3.0**.\
 See the [LICENSE](LICENSE) file for details.
 
----
-
-## Repository
-
-[https://github.com/fjulian79/wd-broker](https://github.com/fjulian79/wd-broker)
-
-Issues, pull requests and feedback are welcome!
