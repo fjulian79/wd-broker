@@ -23,6 +23,7 @@
  */
 
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -42,6 +43,8 @@
 
 #include "config.h" // for PACKAGE_VERSION
 
+#define STR_HELPER(x)            #x
+#define STR(x)                   STR_HELPER(x)
 #define SOCKET_PATH_DEFAULT      "/tmp/wd-broker.sock"
 #define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
 #define MAX_CLIENTS              64
@@ -50,10 +53,18 @@
 #define LOOP_INTERVAL_DEFAULT_MS 1000
 #define LOOP_INTERVAL_MIN_MS     LOOP_INTERVAL_DEFAULT_MS
 #define LOOP_INTERVAL_MAX_MS     60000
+#define CLIENT_NAME_LEN          64
+#define CLIENT_NAME_FMT_LEN_STR  "63" // cant use (CLIENT_NAME_LEN - 1) here
+#define REGISTER_SCANF_FORMAT    "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
+#define CLIENT_TIMEOUT_MIN_MS    LOOP_INTERVAL_MIN_MS
+#define CLIENT_TIMEOUT_MAX_MS    LOOP_INTERVAL_MAX_MS
+#define CMD_REGISTER             "REGISTER "
+#define CMD_PING                 "PING "
+#define CMD_UNREGISTER           "UNREGISTER "
 
 typedef struct {
     char            clientID[CLIENTID_LEN];
-    char            name[64];
+    char            name[CLIENT_NAME_LEN];
     uint32_t        timeout_ms;
     struct timespec last_ping;
     bool            active;
@@ -119,13 +130,34 @@ void handle_command(int client_sock) {
     }
     buf[len] = '\0';
 
-    if (strncmp(buf, "REGISTER ", 9) == 0) {
-        char name[64];
-        int  tmp_timeout;
-        if (sscanf(buf + 9, "%63s %d", name, &tmp_timeout) != 2) {
-            write_str(client_sock, "ERROR invalid REGISTER\n");
+    if (strncmp(buf, CMD_REGISTER, strlen(CMD_REGISTER)) == 0) {
+        char name[CLIENT_NAME_LEN];
+        int  tmp_timeout = 0;
+        char extra[16]; // catches unexpected extra input
+        int  n = 0;
+
+        /* Try to match exactly two arguments, and reject trailing garbage */
+        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, extra);
+        if (n != 2) {
+            write_str(client_sock, "ERROR invalid REGISTER syntax\n");
             return;
         }
+
+        /* Validate timeout range */
+        if (tmp_timeout < CLIENT_TIMEOUT_MIN_MS || tmp_timeout > CLIENT_TIMEOUT_MAX_MS) {
+            write_str(client_sock, "ERROR invalid timeout\n");
+            return;
+        }
+
+        /* Reject empty or clearly broken names */
+        for (size_t i = 0; i < strlen(name); ++i) {
+            if (!isprint(name[i]) || isspace(name[i])) {
+                write_str(client_sock, "ERROR invalid client name\n");
+                return;
+            }
+        }
+
+        /* Register the client */
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (!clients[i].active) {
                 clients[i].active = true;
@@ -139,6 +171,7 @@ void handle_command(int client_sock) {
                 return;
             }
         }
+
         write_str(client_sock, "ERROR too many clients\n");
     } else if (strncmp(buf, "PING ", 5) == 0) {
         sscanf(buf + 5, "%8s", clientID);

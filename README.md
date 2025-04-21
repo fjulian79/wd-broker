@@ -57,6 +57,8 @@ The protocol is simple and line-based:
 - `PING <uid>` → responds with `OK` or `ERROR`
 - `UNREGISTER <uid>` → responds with `OK` or `ERROR`
 
+Commands may optionally be terminated with a newline (\\n). Newlines are ignored during parsing. This allows compatibility with interactive tools like telnet, socat, or echo.
+
 ## Testing
 
 `wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
