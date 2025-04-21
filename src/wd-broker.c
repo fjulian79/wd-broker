@@ -186,7 +186,9 @@ void handle_command(int client_sock) {
             }
         }
 
+        /* If we reach this point, all client slots are taken */
         write_str(client_sock, "ERROR too many clients\n");
+        
     } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
         char clientID_raw[CLIENTID_LEN];
         char extra[16];
