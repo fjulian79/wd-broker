@@ -59,7 +59,7 @@
 #define CLIENTID_LEN             9
 #define CLIENTID_FMT_LEN_NUM     8 // CLIENTID_LEN - 1
 #define CLIENTID_FMT_LEN_STR     STR(CLIENTID_FMT_LEN_NUM)
-#define PING_SCANF_FORMAT        "%" CLIENTID_FMT_LEN_STR "s %15s"
+#define CLIENTID_SCANF_FORMAT    "%" CLIENTID_FMT_LEN_STR "s %15s"
 #define CLIENT_TIMEOUT_MIN_MS    LOOP_INTERVAL_MIN_MS
 #define CLIENT_TIMEOUT_MAX_MS    LOOP_INTERVAL_MAX_MS
 #define CMD_REGISTER             "REGISTER "
@@ -92,12 +92,54 @@ void print_help(const char *progname) {
     printf("  --version          Show version information\n");
 }
 
+void write_or_log(int fd, const char *msg, size_t len) {
+    ssize_t written = write(fd, msg, len);
+    if (written < 0) {
+        perror("write");
+    }
+}
+
+void write_str(int fd, const char *msg) {
+    write_or_log(fd, msg, strlen(msg));
+}
+
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
     for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
         clientID_out[i] = hex[rand() % 16];
     }
     clientID_out[CLIENTID_LEN - 1] = '\0';
+}
+
+bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out_id) {
+    char clientID_raw[CLIENTID_LEN];
+    char extra[16];
+    int  n = sscanf(buf + strlen(cmd_prefix), CLIENTID_SCANF_FORMAT, clientID_raw, extra);
+
+    /* Try to match exactly one argument, and reject trailing garbage */
+    if (n != 1) {
+        write_str(sock, "ERROR invalid syntax\n");
+        return false;
+    }
+
+    /* Check if clientID is a valid hex string */
+    size_t id_len = strlen(clientID_raw);
+    if (id_len != CLIENTID_FMT_LEN_NUM) {
+        write_str(sock, "ERROR invalid clientID length\n");
+        return false;
+    }
+
+    /* Check if clientID is a valid hex string and enforce lower case */
+    for (size_t i = 0; i < id_len; ++i) {
+        if (!isxdigit((unsigned char)clientID_raw[i])) {
+            write_str(sock, "ERROR invalid clientID format\n");
+            return false;
+        }
+        out_id[i] = (char)tolower((unsigned char)clientID_raw[i]);
+    }
+
+    out_id[id_len] = '\0';
+    return true;
 }
 
 void get_now(struct timespec *ts) {
@@ -112,17 +154,6 @@ uint32_t ms_since(struct timespec *then) {
 
 void signal_handler(int sig) {
     running = false;
-}
-
-void write_or_log(int fd, const char *msg, size_t len) {
-    ssize_t written = write(fd, msg, len);
-    if (written < 0) {
-        perror("write");
-    }
-}
-
-void write_str(int fd, const char *msg) {
-    write_or_log(fd, msg, strlen(msg));
 }
 
 void handle_command(int client_sock) {
@@ -188,39 +219,13 @@ void handle_command(int client_sock) {
 
         /* If we reach this point, all client slots are taken */
         write_str(client_sock, "ERROR too many clients\n");
-        
+
     } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
-        char clientID_raw[CLIENTID_LEN];
-        char extra[16];
-        int  n = sscanf(buf + strlen(CMD_PING), PING_SCANF_FORMAT, clientID_raw, extra);
-
-        /* Try to match exactly one argument, and reject trailing garbage */
-        if (n != 1) {
-            write_str(client_sock, "ERROR invalid PING syntax\n");
-            return;
-        }
-
-        /* Validate clientID format */
-        size_t id_len = strlen(clientID_raw);
-        if (id_len != CLIENTID_FMT_LEN_NUM) {
-            write_str(client_sock, "ERROR invalid clientID length\n");
-            return;
-        }
-
-        /* Check if clientID is a valid hex string */
-        for (size_t i = 0; i < id_len; ++i) {
-            if (!isxdigit((unsigned char)clientID_raw[i])) {
-                write_str(client_sock, "ERROR invalid clientID format\n");
-                return;
-            }
-        }
-
-        /* Convert clientID to lowercase */
         char clientID[CLIENTID_LEN];
-        for (size_t i = 0; i < id_len; ++i) {
-            clientID[i] = (char)tolower((unsigned char)clientID_raw[i]);
+
+        if (!parse_clientID(buf, CMD_PING, client_sock, clientID)) {
+            return;
         }
-        clientID[id_len] = '\0';
 
         /* Check if clientID is registered and confirm the PING if so */
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
@@ -235,8 +240,14 @@ void handle_command(int client_sock) {
         /* If we reach this point, the clientID is not registered */
         write_str(client_sock, "ERROR unknown clientID\n");
 
-    } else if (strncmp(buf, "UNREGISTER ", 11) == 0) {
-        sscanf(buf + 11, "%8s", clientID);
+    } else if (strncmp(buf, CMD_UNREGISTER, strlen(CMD_UNREGISTER)) == 0) {
+        char clientID[CLIENTID_LEN];
+
+        if (!parse_clientID(buf, CMD_UNREGISTER, client_sock, clientID)) {
+            return;
+        }
+
+        /* Check if clientID is registered and unregister it if so */
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
                 printf("INFO: client '%s' unregistered (clientID=%s)\n", clients[i].name,
@@ -246,7 +257,10 @@ void handle_command(int client_sock) {
                 return;
             }
         }
+
+        /* If we reach this point, the clientID is not registered */
         write_str(client_sock, "ERROR unknown clientID\n");
+
     } else {
         write_str(client_sock, "ERROR unknown command\n");
     }
