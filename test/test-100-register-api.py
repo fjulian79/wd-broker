@@ -26,7 +26,7 @@
 #
 # Please feel free to open issues or contribute improvements.
 
-from common import check_cmd, unregister, log_step, fail
+from common import *
 import re
 
 default_timeout = 3000

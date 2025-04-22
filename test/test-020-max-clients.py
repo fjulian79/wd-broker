@@ -27,10 +27,9 @@
 #
 # Please feel free to open issues or contribute improvements.
 
-from common import register, unregister, check_cmd, fail, log_info, log_step
+from common import *
 import sys
 
-MAX_CLIENTS = 64
 heartbeat_ms = 30000
 clients = []
 ids = set()

@@ -27,7 +27,7 @@
 #
 # Please feel free to open issues or contribute improvements.
 
-from common import register, unregister, check_cmd, fail
+from common import *
 
 def valid(label, cmd):
     check_cmd(label, cmd, expect="OK")
@@ -38,37 +38,27 @@ def invalid(label, cmd):
 # Setup: register a valid client
 clientID = register("pingtest", 10000)
 
-# Derive some invalid clientIDs
-clientID_len = len(clientID)
-
-clientID_short = clientID[:-1]
-clientID_long = clientID + "ff"
-clientID_nonhex = "z" * clientID_len
-clientID_blank = " " * clientID_len
-clientID_mixed = clientID[:-1] + "g"
-clientID_invalid = f"{int(clientID, 16) ^ 0x1:0{len(clientID)}x}"
-clientID_upper = clientID.upper()
+#derive invalid clientIDs
+bad_ids = derive_invalid_ids(clientID)
+clientID_invalid = bad_ids['invalid id']
 
 # Valid PINGs
 valid("valid PING",                 f"PING {clientID}")
 valid("valid + nl",                 f"PING {clientID}\n")
 valid("valid + ws",                 f"PING   {clientID}")
-valid("valid uppercase id",         f"PING {clientID_upper}")
+valid("valid uppercase id",         f"PING {clientID.upper()}")
 valid("valid + trailing ws",        f"PING {clientID}  ")
 valid("valid + trailing ws + nl",   f"PING {clientID}  \n")
 
 # Invalid PINGs
+for label, test_id in bad_ids.items():
+    invalid(f"{label}",             f"PING {test_id}\n")
+
 invalid("valid + leading ws",       f"  PING {clientID}")
 invalid("lowercase",                f"ping {clientID}")
 invalid("PascalCase",               f"PiNg {clientID}")
 invalid("SentenenceCase",           f"Ping {clientID}")
 invalid("KebabCase",                f"PI-NG {clientID}")
-invalid("clientID short",           f"PING {clientID_short}")
-invalid("clientID long",            f"PING {clientID_long}")
-invalid("clientID nonhex",          f"PING {clientID_nonhex}")
-invalid("clientID blank",           f"PING {clientID_blank}")
-invalid("clientID mixed",           f"PING {clientID_mixed}")
-invalid("clientID invalid",         f"PING {clientID_invalid}")
 invalid("missing argument",         f"PING")
 invalid("extra whitespace",         f"PING  ")
 invalid("extra ws + nl",            f"PING  \n")

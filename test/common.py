@@ -26,6 +26,7 @@ import socket
 import sys
 import os
 
+MAX_CLIENTS = 64
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
 
 def log(level, *args):
@@ -50,6 +51,17 @@ def log_error(msg):
 def fail(msg):
     log_error(msg)
     sys.exit(1)
+
+def derive_invalid_ids(valid_id):
+    id_len = len(valid_id)
+    return {
+        "short id":      valid_id[:-1],
+        "long id":       valid_id + "ff",
+        "nonhex id":     "z" * id_len,
+        "blank id":      " " * id_len,
+        "mixed id":      valid_id[:-1] + "g",
+        "invalid id":    f"{int(valid_id, 16) ^ 0x1:0{id_len}x}",
+    }
 
 def register(name, timeout_ms, expect="OK"):
     reply = check_cmd(f"REGISTER '{name}'", f"REGISTER {name} {timeout_ms}\n", expect=expect)

@@ -27,7 +27,7 @@
 #
 # Please feel free to open issues or contribute improvements.
 
-from common import register, unregister, check_cmd, log_info
+from common import *
 import time
 import sys
 
