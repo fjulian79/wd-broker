@@ -49,6 +49,7 @@ valid("valid + ws",                 f"PING   {clientID}")
 valid("valid uppercase id",         f"PING {clientID.upper()}")
 valid("valid + trailing ws",        f"PING {clientID}  ")
 valid("valid + trailing ws + nl",   f"PING {clientID}  \n")
+valid("valid + nl + trailing ws",   f"PING {clientID}\n  ")
 
 # Invalid PINGs
 for label, test_id in bad_ids.items():
