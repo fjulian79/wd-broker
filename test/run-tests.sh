@@ -78,20 +78,29 @@ run_test() {
     echo
 }
 
-if [ $# -eq 1 ]; then
-    test_file="$SCRIPT_DIR/$1"
-    if [ ! -f "$test_file" ]; then
-        echo "[ERROR] Test '$1' not found."
+if [ $# -ge 1 ]; then
+    matched=0
+    for pattern in "$@"; do
+        for test_file in "$SCRIPT_DIR"/$pattern; do
+            if [ -f "$test_file" ]; then
+                run_test "$test_file"
+                matched=1
+            fi
+        done
+    done
+
+    if [ $matched -eq 0 ]; then
+        echo "[ERROR] No test files matched: $*"
         exit 2
     fi
-    run_test "$test_file"
 else
     for test_file in "$SCRIPT_DIR"/test-*.py; do
         run_test "$test_file"
     done
-
-    echo "[SUMMARY] $PASSED passed, $FAILED failed, $TOTAL total"
-    if [ $FAILED -ne 0 ]; then
-        exit 1
-    fi
 fi
+
+echo "[SUMMARY] $PASSED passed, $FAILED failed, $TOTAL total"
+if [ $FAILED -ne 0 ]; then
+    exit 1
+fi
+

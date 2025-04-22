@@ -24,9 +24,11 @@ The repository includes a portable test setup for verifying the broker’s behav
 
 You can also run individual tests:
 ```bash
-./run-tests.sh test-client.py
+./run-tests.sh test-000-single-client.py
+./run-tests.sh test-000-single-client.py test-010-multiple-clients.py
+./run-tests.sh test-1*
+./run-tests.sh test-020*
 ```
-
 ## Test Descriptions
 
 - `test-client.py`: Registers a client and sends periodic PINGs.
