@@ -22,9 +22,13 @@
 #
 # Please feel free to open issues or contribute improvements.
 
+import subprocess
+import atexit
+import time
 import socket
 import sys
 import os
+import tempfile
 
 MAX_CLIENTS = 64
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
@@ -47,7 +51,99 @@ def log_step(msg):
 
 def log_error(msg):  
     log("ERROR", msg)
-    
+
+class TestBroker:
+    """
+    Manages the lifecycle of a wd-broker instance in test mode.
+    - Starts the broker with stdout/stderr redirected to a temporary log file
+    - Clears the log before each start
+    - Provides access to log content
+    - Automatically stops the broker and deletes the log file
+    """
+
+    def __init__(self):
+        self.proc = None
+        self.started = False
+        self.log_file = tempfile.NamedTemporaryFile(prefix="broker-log-", suffix=".log", delete=False)
+        self.log_path = self.log_file.name
+        self.log_file.close()
+
+    def start(self):
+        if self.started:
+            raise RuntimeError("Broker already started")
+
+        # Truncate log before each run
+        with open(self.log_path, "w"):
+            pass
+
+        self.log_stream = open(self.log_path, "w")
+
+        self.proc = subprocess.Popen(
+            ["./wd-broker", "--test"],
+            stdout=self.log_stream,
+            stderr=subprocess.STDOUT
+        )
+        self.started = True
+        atexit.register(self.stop)
+
+        log_info(f"Broker started, PID: {self.proc.pid}")
+
+        # Check for socket file to become available
+        for _ in range(20):
+            if os.path.exists("/tmp/wd-broker-test.sock"):
+                return
+            if self.proc.poll() is not None:
+                log_error("Broker process exited unexpectedly!")
+                self.print_log()
+                raise RuntimeError("Broker startup failed")
+            time.sleep(0.1)
+
+        log_error("Socket was not created in time: /tmp/wd-broker-test.sock")
+        log_debug("Broker log:")
+        self.print_log()
+        raise RuntimeError("Broker did not create socket")
+
+    def stop(self):
+        if not self.started:
+            return
+
+        if self.proc:
+            if self.proc.poll() is None:
+                try:
+                    self.proc.terminate()
+                    self.proc.wait(timeout=1.0)
+                    log_info(f"Broker killed, PID: {self.proc.pid}")
+                except Exception:
+                    self.proc.kill()
+                    log_error(f"Broker force-killed, PID: {self.proc.pid}")
+            else:
+                log_info(f"Broker process {self.proc.pid} already terminated")
+        if self.log_stream and not self.log_stream.closed:
+            self.log_stream.close()
+        self.started = False
+
+    def is_running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def get_log(self):
+        if not os.path.exists(self.log_path):
+            raise FileNotFoundError(f"Broker log file not found: {self.log_path}")
+        with open(self.log_path, "r") as f:
+            return f.read().splitlines()
+
+    def print_log(self):
+        for line in self.get_log():
+            print("[BROKER]", line)
+
+    def __del__(self):
+        try:
+            if self.log_stream and not self.log_stream.closed:
+                self.log_stream.close()
+            if os.path.exists(self.log_path):
+                os.unlink(self.log_path)
+        except Exception:
+            pass  # silent cleanup on object destruction
+
 def fail(msg):
     log_error(msg)
     sys.exit(1)

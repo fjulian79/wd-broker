@@ -30,6 +30,9 @@
 from common import *
 import sys
 
+broker = TestBroker()
+broker.start()
+
 heartbeat_ms = 30000
 clients = []
 ids = set()
@@ -67,4 +70,4 @@ clients.append(("replacement", clientID))
 for name, clientID in clients:
     unregister(clientID, name=name)
 
-sys.exit(0)
+broker.stop()

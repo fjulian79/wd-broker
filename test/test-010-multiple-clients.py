@@ -31,6 +31,9 @@ from common import *
 import time
 import sys
 
+broker = TestBroker()
+broker.start()
+
 clients = []
 names = ["alpha", "beta", "alpha", "gamma", "delta", "beta"]
 
@@ -50,5 +53,4 @@ for i in range(5):
 for name, clientID in clients:
     unregister(clientID)
 
-log_info("All clients successfully registered, pinged and unregistered.")
-sys.exit(0)
+broker.stop()

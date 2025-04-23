@@ -28,6 +28,9 @@
 
 from common import *
 
+broker = TestBroker()
+broker.start()
+
 def valid(label, cmd):
     check_cmd(label, cmd, expect="OK")
 
@@ -75,3 +78,5 @@ invalid("control char",             f"UNREGISTER \x01ID123\n")
 
 # Finally, unregister the client as its ID should be still valid
 valid("finally valid id",                   f"UNREGISTER {clientID}\n")
+
+broker.stop()

@@ -29,6 +29,9 @@
 
 from common import *
 
+broker = TestBroker()
+broker.start()
+
 def valid(label, cmd):
     check_cmd(label, cmd, expect="OK")
 
@@ -80,5 +83,4 @@ invalid("multiple inj. NOK NOK",    f"PING {clientID_invalid} PING {clientID_inv
 invalid("PING + tab",               f"PING {clientID}\\t")
 invalid("PING + null",              f"PING {clientID}\\x00")
 
-# Cleanup
-unregister(clientID, name="pingtest")
+broker.stop()

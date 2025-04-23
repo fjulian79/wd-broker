@@ -29,6 +29,9 @@
 from common import *
 import re
 
+broker = TestBroker()
+broker.start()
+
 default_timeout = 3000
 
 def valid(label, cmd):
@@ -66,3 +69,5 @@ invalid("timeout huge",        f"REGISTER client123 999999999999")
 invalid("empty name",          f"REGISTER  3000")
 invalid("unicode name",        f"REGISTER 👾 3000")
 invalid("newline injection",   f"REGISTER attacker\nPING other")
+
+broker.stop()

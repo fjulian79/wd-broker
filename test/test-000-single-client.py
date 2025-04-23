@@ -30,6 +30,9 @@ from common import *
 import time
 import sys
 
+broker = TestBroker()
+broker.start()
+
 clientID = register("testclient", 3000)
 
 for i in range(5):
@@ -37,4 +40,5 @@ for i in range(5):
     check_cmd(f"PING {clientID}", f"PING {clientID}\n", expect="OK")
 
 unregister(clientID)
-sys.exit(0)
+
+broker.stop()

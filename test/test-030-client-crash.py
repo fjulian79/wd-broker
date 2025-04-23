@@ -34,6 +34,9 @@ import time
 import sys
 import os
 
+broker = TestBroker()
+broker.start()
+
 clients = []
 names = ["alpha", "beta", "alpha", "gamma", "delta", "beta"]
 log_path = os.environ.get("BROKER_LOG")
@@ -77,4 +80,4 @@ if "CLIENT HEARTBEAT TIMEOUT OCCURED" not in log:
     fail("Expected timeout message not found in broker log.")
 log_step("Timeout message confirmed in log.")
 
-sys.exit(0)
+broker.stop()
