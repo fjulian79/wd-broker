@@ -199,7 +199,6 @@ void signal_handler(int sig) {
 
 void handle_command(int client_sock) {
     char           buf[BUF_SIZE];
-    char           clientID[CLIENTID_LEN];
     ssize_t        len = 0;
     struct timeval recv_timeout = {
         .tv_sec = 0,
@@ -307,6 +306,14 @@ void handle_command(int client_sock) {
     }
 }
 
+static void feed_watchdog(int fd, const char *msg) {
+    ssize_t w = write(fd, msg, strlen(msg));
+    if (w != (ssize_t)strlen(msg)) {
+        perror("write watchdog");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char *argv[]) {
     bool all_ok = true;
 
@@ -363,10 +370,14 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         if (pid > 0) {
-            return 0; // parent exits
+            // parent exits
+            return 0;
+        }
+        if (chdir("/") != 0) {
+            perror("chdir");
+            exit(EXIT_FAILURE);
         }
         setsid();
-        chdir("/");
         fclose(stdin);
         fclose(stdout);
         fclose(stderr);
@@ -420,7 +431,11 @@ int main(int argc, char *argv[]) {
             }
             if (FD_ISSET(timer_fd, &fds)) {
                 uint64_t expirations;
-                read(timer_fd, &expirations, sizeof(expirations));
+                ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
+                if (size != sizeof(expirations)) {
+                    perror("read timer_fd");
+                    exit(EXIT_FAILURE);
+                }
 
                 for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
                     if (clients[i].active) {
@@ -436,8 +451,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 if (watchdog_enabled && all_ok) {
-                    // Feed the watchdog
-                    write(watchdog_fd, "V", 1);
+                    feed_watchdog(watchdog_fd, "V");
                 }
             }
         }
@@ -459,7 +473,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (watchdog_enabled) {
-        write(watchdog_fd, "V", 1);
+        feed_watchdog(watchdog_fd, "V");
         close(watchdog_fd);
     }
     close(timer_fd);
