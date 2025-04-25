@@ -68,7 +68,7 @@ class TestBroker:
         self.log_path = self.log_file.name
         self.log_file.close()
 
-    def start(self):
+    def start(self, expect="OK"):
         if self.started:
             raise RuntimeError("Broker already started")
 
@@ -77,7 +77,6 @@ class TestBroker:
             pass
 
         self.log_stream = open(self.log_path, "w")
-
         self.proc = subprocess.Popen(
             ["./wd-broker", "--test"],
             stdout=self.log_stream,
@@ -86,22 +85,34 @@ class TestBroker:
         self.started = True
         atexit.register(self.stop)
 
-        log_info(f"Broker started, PID: {self.proc.pid}")
-
-        # Check for socket file to become available
-        for _ in range(20):
-            if os.path.exists("/tmp/wd-broker-test.sock"):
-                return
-            if self.proc.poll() is not None:
-                log_error("Broker process exited unexpectedly!")
+        try:
+            if expect == "OK":
+                ret = self.proc.wait(timeout=0.1)
+                log_error(f"Broker process failed with code {ret}")
+                self.started = False
                 self.print_log()
-                raise RuntimeError("Broker startup failed")
-            time.sleep(0.1)
+                return False
+            else:
+                ret = self.proc.wait(timeout=1.0)
+                if ret == 0:
+                    log_error(f"Broker started, PID: {self.proc.pid}")
+                    self.stop()
+                    self.print_log()
+                    return False
+                else:
+                    log_step(f"Broker process failed with code {ret}")
+                    self.started = False
+                    return True
 
-        log_error("Socket was not created in time: /tmp/wd-broker-test.sock")
-        log_debug("Broker log:")
-        self.print_log()
-        raise RuntimeError("Broker did not create socket")
+        except subprocess.TimeoutExpired:
+            if expect == "OK":
+                log_info(f"Broker started, PID: {self.proc.pid}")
+                return True
+            else:
+                log_error("Broker did not exit in time, but failure was expected")
+                self.stop()
+                self.print_log()
+                return False
 
     def stop(self):
         if not self.started:

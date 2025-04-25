@@ -142,6 +142,47 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
     return true;
 }
 
+static void check_and_unlink_socket(const char *path) {
+    struct stat st;
+    if (lstat(path, &st) == 0) {
+        if (!S_ISSOCK(st.st_mode)) {
+            fprintf(stderr, "ERROR: '%s' exists but is not a socket\n", path);
+            exit(EXIT_FAILURE);
+        }
+
+        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (probe_fd < 0) {
+            perror("socket");
+            exit(EXIT_FAILURE);
+        }
+
+        struct sockaddr_un addr = {0};
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+        if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            fprintf(stderr, "ERROR: active broker detected at '%s'\n", path);
+            close(probe_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        if (errno != ECONNREFUSED) {
+            perror("connect");
+            close(probe_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        close(probe_fd);
+
+        if (unlink(path) == 0) {
+            printf("INFO: removed stale socket at '%s'\n", path);
+        } else {
+            perror("unlink");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
 void get_now(struct timespec *ts) {
     clock_gettime(CLOCK_MONOTONIC, ts);
 }
@@ -339,7 +380,7 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    unlink(socket_path);
+    check_and_unlink_socket(socket_path);
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     bind(server_sock, (struct sockaddr *)&addr, sizeof(addr));
     listen(server_sock, 5);
