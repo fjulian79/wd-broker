@@ -140,7 +140,7 @@ class TestBroker:
         if not os.path.exists(self.log_path):
             raise FileNotFoundError(f"Broker log file not found: {self.log_path}")
         with open(self.log_path, "r") as f:
-            return f.read().splitlines()
+            return f.read()
 
     def print_log(self):
         for line in self.get_log():

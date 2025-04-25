@@ -39,7 +39,6 @@ broker.start()
 
 clients = []
 names = ["alpha", "beta", "alpha", "gamma", "delta", "beta"]
-log_path = os.environ.get("BROKER_LOG")
 
 # Register all clients
 for name in names:
@@ -62,7 +61,7 @@ for name, clientID in clients:
     check_cmd(f"PING {name}({clientID})", f"PING {clientID}\n", expect="OK")
     time.sleep(0.2)  # Simulate a small delay between PINGs
 
-log_info(f"Adding delay to the broker detect the timeout of {dead_name} ({dead_id})")
+log_info(f"Adding delay to allow broker to detect timeout of {dead_name} ({dead_id})")
 time.sleep(2)
 
 # now expecting the surviving clients to see errors as the broker should be down.
@@ -70,12 +69,9 @@ for name, clientID in clients:
     check_cmd(f"PING {name}({clientID})", f"PING {clientID}\n", shall_fail=True)
 
 log_info("Checking broker log for timeout message...")
-if not os.path.exists(log_path):
-    fail(f"Expected broker log file '{log_path}' not found.")
-with open(log_path) as f:
-    log = f.read()
+log = broker.get_log()
 
-if "CLIENT HEARTBEAT TIMEOUT OCCURED" not in log:
+if "CLIENT HEARTBEAT TIMEOUT OCCURRED" not in log:
     print(log)
     fail("Expected timeout message not found in broker log.")
 log_step("Timeout message confirmed in log.")

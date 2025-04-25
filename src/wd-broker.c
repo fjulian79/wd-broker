@@ -449,7 +449,7 @@ int main(int argc, char *argv[]) {
          * intentional reset if the watchdog is enabled or by the user
          * termination in test mode, makes not differnece at this point.
          * */
-        printf("ERROR: CLIENT HEARTBEAT TIMEOUT OCCURED, SYSTEM RESET PENDING!\n");
+        printf("ERROR: CLIENT HEARTBEAT TIMEOUT OCCURRED, SYSTEM RESET PENDING!\n");
         fflush(stdout);
         close(timer_fd);
         unlink(socket_path);
