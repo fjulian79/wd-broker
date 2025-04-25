@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/timerfd.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -56,8 +57,8 @@
 #define CLIENT_NAME_LEN          64
 #define CLIENT_NAME_FMT_LEN_STR  "63" // cant use (CLIENT_NAME_LEN - 1) here
 #define REGISTER_SCANF_FORMAT    "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
-#define CLIENTID_LEN             9
-#define CLIENTID_FMT_LEN_NUM     8 // CLIENTID_LEN - 1
+#define CLIENTID_LEN             17 // 16 hex digits + null terminator
+#define CLIENTID_FMT_LEN_NUM     16 // Must be a number cant use CLIENTID_LEN - 1
 #define CLIENTID_FMT_LEN_STR     STR(CLIENTID_FMT_LEN_NUM)
 #define CLIENTID_SCANF_FORMAT    "%" CLIENTID_FMT_LEN_STR "s %15s"
 #define CLIENT_TIMEOUT_MIN_MS    LOOP_INTERVAL_MIN_MS
@@ -105,9 +106,34 @@ void write_str(int fd, const char *msg) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
-        clientID_out[i] = hex[rand() % 16];
+    uint8_t           raw[CLIENTID_LEN - 1];
+    bool              have_raw = false;
+
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        ssize_t n = read(fd, raw, sizeof(raw));
+        close(fd);
+
+        if (n == sizeof(raw)) {
+            have_raw = true;
+        }
     }
+
+    if (!have_raw) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        unsigned int seed = (unsigned int)(tv.tv_sec ^ tv.tv_usec ^ getpid() ^ getppid());
+
+        srandom(seed);
+        for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+            raw[i] = random() & 0xFF;
+        }
+    }
+
+    for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+        clientID_out[i] = hex[raw[i] & 0x0F];
+    }
+
     clientID_out[CLIENTID_LEN - 1] = '\0';
 }
 
