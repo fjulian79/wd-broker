@@ -45,6 +45,7 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 - `--test`: run without accessing `/dev/watchdog`
 - `--interval <ms>`: set the watchdog tick interval (default: 1000 ms)
+- `--syslog-facility <facility>`: Set syslog facility (default: LOG_DAEMON), Supports LOG_DAEMON, LOG_USER and LOG_LOCAL*
 - `--version`: show version
 - `--help`: show usage info
 

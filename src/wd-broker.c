@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -39,6 +40,7 @@
 #include <sys/timerfd.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -94,19 +96,77 @@ void print_help(const char *progname) {
     printf("  --test             Run in test mode (no /dev/watchdog access)\n");
     printf("  --interval <ms>    Set loop interval in milliseconds (default: %d)\n",
            LOOP_INTERVAL_DEFAULT_MS);
+    printf("  --syslog-facility  Set syslog facility (default: LOG_DAEMON)\n");
     printf("  --help             Show this help message\n");
     printf("  --version          Show version information\n");
 }
 
-void write_or_log(int fd, const char *msg, size_t len) {
-    ssize_t written = write(fd, msg, len);
-    if (written < 0) {
-        perror("write");
+void log_message(int priority, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+
+    if (test_mode) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        struct tm tmb;
+        localtime_r(&tv.tv_sec, &tmb);
+
+        const char *prio_str;
+        switch (priority) {
+            case LOG_EMERG:
+                prio_str = "EMERG ";
+                break;
+            case LOG_ALERT:
+                prio_str = "ALERT ";
+                break;
+            case LOG_CRIT:
+                prio_str = "CRIT  ";
+                break;
+            case LOG_ERR:
+                prio_str = "ERROR ";
+                break;
+            case LOG_WARNING:
+                prio_str = "WARN  ";
+                break;
+            case LOG_NOTICE:
+                prio_str = "NOTICE";
+                break;
+            case LOG_INFO:
+                prio_str = "INFO  ";
+                break;
+            case LOG_DEBUG:
+                prio_str = "DEBUG ";
+                break;
+            default:
+                prio_str = "UNDEF ";
+                break;
+        }
+
+        char timestr[32];
+        strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", &tmb);
+        fprintf(stdout, "%s.%06ld [%s] ", timestr, (long)tv.tv_usec, prio_str);
+        vfprintf(stdout, fmt, ap);
+        fprintf(stdout, "\n");
+
+        if (priority <= LOG_WARNING) {
+            fflush(stdout);
+        }
+    } else {
+        vsyslog(priority, fmt, ap);
     }
+
+    va_end(ap);
 }
 
-void write_str(int fd, const char *msg) {
-    write_or_log(fd, msg, strlen(msg));
+void write_str(int fd, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+
+    if (vdprintf(fd, fmt, ap) < 0) {
+        log_message(LOG_ERR, "vdprintf: %s", strerror(errno));
+    }
+
+    va_end(ap);
 }
 
 void make_clientID(char *clientID_out) {
@@ -192,13 +252,13 @@ static void check_and_unlink_socket(const char *path) {
     struct stat st;
     if (lstat(path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
-            fprintf(stderr, "ERROR: '%s' exists but is not a socket\n", path);
+            log_message(LOG_CRIT, "'%s' exists but is not a socket", path);
             exit(EXIT_FAILURE);
         }
 
         int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (probe_fd < 0) {
-            perror("socket");
+            log_message(LOG_CRIT, "socket: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
 
@@ -207,13 +267,13 @@ static void check_and_unlink_socket(const char *path) {
         strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
 
         if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            fprintf(stderr, "ERROR: active broker detected at '%s'\n", path);
+            log_message(LOG_CRIT, "Active broker detected at '%s'", path);
             close(probe_fd);
             exit(EXIT_FAILURE);
         }
 
         if (errno != ECONNREFUSED) {
-            perror("connect");
+            log_message(LOG_CRIT, "connect: %s", strerror(errno));
             close(probe_fd);
             exit(EXIT_FAILURE);
         }
@@ -221,9 +281,9 @@ static void check_and_unlink_socket(const char *path) {
         close(probe_fd);
 
         if (unlink(path) == 0) {
-            printf("INFO: removed stale socket at '%s'\n", path);
+            log_message(LOG_INFO, "Removed stale socket at '%s'", path);
         } else {
-            perror("unlink");
+            log_message(LOG_CRIT, "unlink: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
     }
@@ -260,7 +320,7 @@ void handle_command(int client_sock) {
 
     if (getsockopt(client_sock, SOL_SOCKET, SO_PEERCRED, &creds, &socklen) == -1) {
         write_str(client_sock, "ERROR reading peercred\n");
-        perror("getsockopt(SO_PEERCRED) failed");
+        log_message(LOG_ERR, "getsockopt: %s", strerror(errno));
         return;
     }
 
@@ -308,10 +368,11 @@ void handle_command(int client_sock) {
                 clients[i].timeout_ms = (uint32_t)tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
-                printf("INFO: client '%s' (PID %d) registered with timeout %d ms as clientID %s)\n",
-                       clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
-                       clients[i].clientID);
-                dprintf(client_sock, "OK %s\n", clients[i].clientID);
+                log_message(LOG_INFO,
+                            "Client '%s' (PID %d) registered with timeout %d ms as clientID %s)",
+                            clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
+                            clients[i].clientID);
+                write_str(client_sock, "OK %s\n", clients[i].clientID);
                 return;
             }
         }
@@ -334,8 +395,8 @@ void handle_command(int client_sock) {
                 return;
             case CLIENT_PID_MISMATCH:
                 write_str(client_sock, "ERROR wrong PID\n");
-                printf("WARNING: client '%s', known as PID %d has sent PING from PID %d\n",
-                       pClient->name, (int)pClient->pid, (int)creds.pid);
+                log_message(LOG_WARNING, "Client '%s', known as PID %d has sent PING from PID %d",
+                            pClient->name, (int)pClient->pid, (int)creds.pid);
                 return;
             default:
                 write_str(client_sock, "ERROR unknown clientID\n");
@@ -352,15 +413,16 @@ void handle_command(int client_sock) {
         ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
         switch (ret) {
             case CLIENT_IDENTIFIED:
-                printf("INFO: client '%s' (PID %d) unregistered (clientID=%s)\n", pClient->name,
-                       (int)pClient->pid, pClient->clientID);
+                log_message(LOG_INFO, "Client '%s' (PID %d) unregistered (clientID=%s)",
+                            pClient->name, (int)pClient->pid, pClient->clientID);
                 pClient->active = false;
                 write_str(client_sock, "OK\n");
                 return;
             case CLIENT_PID_MISMATCH:
                 write_str(client_sock, "ERROR wrong PID\n");
-                printf("WARNING: client '%s', known as PID %d has sent UNREGISTER from PID %d\n",
-                       pClient->name, (int)pClient->pid, (int)creds.pid);
+                log_message(LOG_WARNING,
+                            "Client '%s', known as PID %d has sent UNREGISTER from PID %d",
+                            pClient->name, (int)pClient->pid, (int)creds.pid);
                 return;
             default:
                 write_str(client_sock, "ERROR unknown clientID\n");
@@ -375,9 +437,40 @@ void handle_command(int client_sock) {
 static void feed_watchdog(int fd, const char *msg) {
     ssize_t w = write(fd, msg, strlen(msg));
     if (w != (ssize_t)strlen(msg)) {
-        perror("write watchdog");
+        log_message(LOG_ERR, "write /dev/watchdog: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
+}
+
+int parse_syslog_facility(const char *str) {
+    if (str == NULL) {
+        return LOG_DAEMON;
+    }
+
+    if (strcmp(str, "LOG_USER") == 0) {
+        return LOG_USER;
+    } else if (strcmp(str, "LOG_DAEMON") == 0) {
+        return LOG_DAEMON;
+    } else if (strcmp(str, "LOG_LOCAL0") == 0) {
+        return LOG_LOCAL0;
+    } else if (strcmp(str, "LOG_LOCAL1") == 0) {
+        return LOG_LOCAL1;
+    } else if (strcmp(str, "LOG_LOCAL2") == 0) {
+        return LOG_LOCAL2;
+    } else if (strcmp(str, "LOG_LOCAL3") == 0) {
+        return LOG_LOCAL3;
+    } else if (strcmp(str, "LOG_LOCAL4") == 0) {
+        return LOG_LOCAL4;
+    } else if (strcmp(str, "LOG_LOCAL5") == 0) {
+        return LOG_LOCAL5;
+    } else if (strcmp(str, "LOG_LOCAL6") == 0) {
+        return LOG_LOCAL6;
+    } else if (strcmp(str, "LOG_LOCAL7") == 0) {
+        return LOG_LOCAL7;
+    }
+
+    fprintf(stderr, "ERROR: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
+    exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
@@ -394,16 +487,19 @@ int main(int argc, char *argv[]) {
                      .tv_nsec = (loop_interval_ms % 1000) * 1000000},
     };
 
+    int facility = LOG_DAEMON;
+
     static struct option long_options[] = {
         {"test", no_argument, 0, 't'},
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
         {"interval", required_argument, 0, 'i'},
+        {"syslog-facility", required_argument, 0, 's'},
         {0, 0, 0, 0},
     };
     int opt;
 
-    while ((opt = getopt_long(argc, argv, "thvi:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
         switch (opt) {
             case 't':
                 test_mode = true;
@@ -417,6 +513,9 @@ int main(int argc, char *argv[]) {
             case 'i':
                 loop_interval_ms = atoi(optarg);
                 break;
+            case 's':
+                facility = parse_syslog_facility(optarg);
+                break;
             default:
                 print_help(argv[0]);
                 return 1;
@@ -424,23 +523,23 @@ int main(int argc, char *argv[]) {
     }
 
     if (loop_interval_ms < LOOP_INTERVAL_MIN_MS || loop_interval_ms > LOOP_INTERVAL_MAX_MS) {
-        fprintf(stderr, "Error: Loop interval must be between %d and %d ms.\n",
-                LOOP_INTERVAL_MIN_MS, LOOP_INTERVAL_MAX_MS);
-        return (EXIT_FAILURE);
+        printf("Error: Loop interval must be between %d and %d ms\n", LOOP_INTERVAL_MIN_MS,
+               LOOP_INTERVAL_MAX_MS);
+        return EXIT_FAILURE;
     }
 
     if (!test_mode) {
+        openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
         pid_t pid = fork();
         if (pid < 0) {
-            perror("fork");
-            return 1;
+            log_message(LOG_CRIT, "fork: %s", strerror(errno));
+            return EXIT_FAILURE;
         }
         if (pid > 0) {
-            // parent exits
-            return 0;
+            return EXIT_SUCCESS;
         }
         if (chdir("/") != 0) {
-            perror("chdir");
+            log_message(LOG_CRIT, "chdir: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
         setsid();
@@ -449,8 +548,8 @@ int main(int argc, char *argv[]) {
         fclose(stderr);
     } else {
         socket_path = SOCKET_PATH_TEST;
-        printf("Running in test mode. /dev/watchdog will not be used.\n");
-        printf("Using socket path: %s\n", socket_path);
+        log_message(LOG_INFO, "Running in test mode. /dev/watchdog will not be used.");
+        log_message(LOG_INFO, "Using socket path: %s", socket_path);
     }
 
     srand(time(NULL));
@@ -469,7 +568,7 @@ int main(int argc, char *argv[]) {
         if (watchdog_fd >= 0) {
             watchdog_enabled = true;
         } else {
-            perror("Failed to open /dev/watchdog");
+            log_message(LOG_CRIT, "open /dev/watchdog: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
     }
@@ -499,7 +598,7 @@ int main(int argc, char *argv[]) {
                 uint64_t expirations;
                 ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
                 if (size != sizeof(expirations)) {
-                    perror("read timer_fd");
+                    log_message(LOG_CRIT, "read timerfd: %s", strerror(errno));
                     exit(EXIT_FAILURE);
                 }
 
@@ -507,10 +606,11 @@ int main(int argc, char *argv[]) {
                     if (clients[i].active) {
                         uint32_t age = ms_since(&clients[i].last_ping);
                         if (age > clients[i].timeout_ms) {
-                            printf("WARNING: client '%s' (PID %d, clientID=%s) missed heartbeat "
-                                   "(%u ms > %d ms)\n",
-                                   clients[i].name, (int)clients[i].pid, clients[i].clientID, age,
-                                   clients[i].timeout_ms);
+                            log_message(LOG_ALERT,
+                                        "Client '%s' (PID %d, clientID=%s) missed heartbeat! (%u "
+                                        "ms > %d ms)",
+                                        clients[i].name, (int)clients[i].pid, clients[i].clientID,
+                                        age, clients[i].timeout_ms);
                             all_ok = false;
                             break;
                         }
@@ -529,8 +629,7 @@ int main(int argc, char *argv[]) {
          * intentional reset if the watchdog is enabled or by the user
          * termination in test mode, makes not differnece at this point.
          * */
-        printf("ERROR: CLIENT HEARTBEAT TIMEOUT OCCURRED, SYSTEM RESET PENDING!\n");
-        fflush(stdout);
+        log_message(LOG_EMERG, "CLIENT HEARTBEAT TIMEOUT OCCURRED, SYSTEM RESET PENDING!");
         close(timer_fd);
         unlink(socket_path);
         while (running) {
@@ -538,10 +637,14 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    log_message(LOG_INFO, "Exiting wd-broker...");
+
     if (watchdog_enabled) {
         feed_watchdog(watchdog_fd, "V");
         close(watchdog_fd);
     }
+
+    closelog();
     close(timer_fd);
     unlink(socket_path);
     return 0;
