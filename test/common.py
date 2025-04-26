@@ -177,12 +177,12 @@ def register(name, timeout_ms, expect="OK"):
         return clientID
     return None
 
-def unregister(clientID, name=None):
+def unregister(clientID, name=None, expect="OK"):
     if name:
         label = f"UNREGISTER {name} ({clientID})"
     else:
         label = f"UNREGISTER {clientID}"
-    check_cmd(label, f"UNREGISTER {clientID}\n", expect="OK")
+    check_cmd(label, f"UNREGISTER {clientID}\n", expect=expect)
 
 def check_cmd(label, cmd, expect=None, timeout_s=30, shall_fail=False):
     try:
@@ -204,3 +204,4 @@ def check_cmd(label, cmd, expect=None, timeout_s=30, shall_fail=False):
             return None
         else:
             fail(f"{label}: connection failed ({e})")
+            return e

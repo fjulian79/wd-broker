@@ -66,13 +66,18 @@
 #define CMD_REGISTER             "REGISTER "
 #define CMD_PING                 "PING "
 #define CMD_UNREGISTER           "UNREGISTER "
+#define CLIENT_IDENTIFIED        0
+#define CLIENT_PID_MISMATCH      -1
+#define CLIENT_NOT_FOUND         -2
 
 typedef struct {
     char            clientID[CLIENTID_LEN];
     char            name[CLIENT_NAME_LEN];
+    pid_t           pid;
     uint32_t        timeout_ms;
     struct timespec last_ping;
     bool            active;
+    bool            checkPID;
 } client_t;
 
 uint32_t      loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
@@ -168,6 +173,21 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
     return true;
 }
 
+int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, client_t **client) {
+    for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+        if (clients[i].active &&
+            strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
+            *client = &clients[i];
+            if (clients[i].checkPID == false || clients[i].pid == pid) {
+                return CLIENT_IDENTIFIED;
+            } else {
+                return CLIENT_PID_MISMATCH;
+            }
+        }
+    }
+    return CLIENT_NOT_FOUND;
+}
+
 static void check_and_unlink_socket(const char *path) {
     struct stat st;
     if (lstat(path, &st) == 0) {
@@ -224,8 +244,12 @@ void signal_handler(int sig) {
 }
 
 void handle_command(int client_sock) {
+    client_t      *pClient = {0};
+    int32_t        ret = 0;
     char           buf[BUF_SIZE];
     ssize_t        len = 0;
+    struct ucred   creds;
+    socklen_t      socklen = sizeof(creds);
     struct timeval recv_timeout = {
         .tv_sec = 0,
         .tv_usec = SOCKET_READ_TIMEOUT_MS * 100,
@@ -233,6 +257,12 @@ void handle_command(int client_sock) {
 
     /* Mandatory to avoid blocking in read when the a cleint does not send any inputs */
     setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout));
+
+    if (getsockopt(client_sock, SOL_SOCKET, SO_PEERCRED, &creds, &socklen) == -1) {
+        write_str(client_sock, "ERROR reading peercred\n");
+        perror("getsockopt(SO_PEERCRED) failed");
+        return;
+    }
 
     len = read(client_sock, buf, sizeof(buf) - 1);
     if (len <= 0) {
@@ -273,11 +303,14 @@ void handle_command(int client_sock) {
             if (!clients[i].active) {
                 clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
+                clients[i].pid = creds.pid;
+                clients[i].checkPID = true;
                 clients[i].timeout_ms = (uint32_t)tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
-                printf("INFO: client '%s' registered with timeout %d ms (clientID=%s)\n",
-                       clients[i].name, clients[i].timeout_ms, clients[i].clientID);
+                printf("INFO: client '%s' (PID %d) registered with timeout %d ms as clientID %s)\n",
+                       clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
+                       clients[i].clientID);
                 dprintf(client_sock, "OK %s\n", clients[i].clientID);
                 return;
             }
@@ -287,45 +320,52 @@ void handle_command(int client_sock) {
         write_str(client_sock, "ERROR too many clients\n");
 
     } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
-        char clientID[CLIENTID_LEN];
+        char clientID[CLIENTID_LEN] = {0};
 
         if (!parse_clientID(buf, CMD_PING, client_sock, clientID)) {
             return;
         }
 
-        /* Check if clientID is registered and confirm the PING if so */
-        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
-            if (clients[i].active &&
-                strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
-                get_now(&clients[i].last_ping);
+        ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
+        switch (ret) {
+            case CLIENT_IDENTIFIED:
+                get_now(&pClient->last_ping);
                 write_str(client_sock, "OK\n");
                 return;
-            }
+            case CLIENT_PID_MISMATCH:
+                write_str(client_sock, "ERROR wrong PID\n");
+                printf("WARNING: client '%s', known as PID %d has sent PING from PID %d\n",
+                       pClient->name, (int)pClient->pid, (int)creds.pid);
+                return;
+            default:
+                write_str(client_sock, "ERROR unknown clientID\n");
+                return;
         }
 
-        /* If we reach this point, the clientID is not registered */
-        write_str(client_sock, "ERROR unknown clientID\n");
-
     } else if (strncmp(buf, CMD_UNREGISTER, strlen(CMD_UNREGISTER)) == 0) {
-        char clientID[CLIENTID_LEN];
+        char clientID[CLIENTID_LEN] = {0};
 
         if (!parse_clientID(buf, CMD_UNREGISTER, client_sock, clientID)) {
             return;
         }
 
-        /* Check if clientID is registered and unregister it if so */
-        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
-            if (clients[i].active && strncmp(clients[i].clientID, clientID, CLIENTID_LEN) == 0) {
-                printf("INFO: client '%s' unregistered (clientID=%s)\n", clients[i].name,
-                       clients[i].clientID);
-                clients[i].active = false;
+        ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
+        switch (ret) {
+            case CLIENT_IDENTIFIED:
+                printf("INFO: client '%s' (PID %d) unregistered (clientID=%s)\n", pClient->name,
+                       (int)pClient->pid, pClient->clientID);
+                pClient->active = false;
                 write_str(client_sock, "OK\n");
                 return;
-            }
+            case CLIENT_PID_MISMATCH:
+                write_str(client_sock, "ERROR wrong PID\n");
+                printf("WARNING: client '%s', known as PID %d has sent UNREGISTER from PID %d\n",
+                       pClient->name, (int)pClient->pid, (int)creds.pid);
+                return;
+            default:
+                write_str(client_sock, "ERROR unknown clientID\n");
+                return;
         }
-
-        /* If we reach this point, the clientID is not registered */
-        write_str(client_sock, "ERROR unknown clientID\n");
 
     } else {
         write_str(client_sock, "ERROR unknown command\n");
@@ -467,9 +507,9 @@ int main(int argc, char *argv[]) {
                     if (clients[i].active) {
                         uint32_t age = ms_since(&clients[i].last_ping);
                         if (age > clients[i].timeout_ms) {
-                            printf("WARNING: client '%s' (clientID=%s) missed heartbeat (%u ms > "
-                                   "%d ms)\n",
-                                   clients[i].name, clients[i].clientID, age,
+                            printf("WARNING: client '%s' (PID %d, clientID=%s) missed heartbeat "
+                                   "(%u ms > %d ms)\n",
+                                   clients[i].name, (int)clients[i].pid, clients[i].clientID, age,
                                    clients[i].timeout_ms);
                             all_ok = false;
                             break;
