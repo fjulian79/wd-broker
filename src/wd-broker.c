@@ -27,6 +27,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <grp.h>
+#include <linux/watchdog.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -34,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -48,12 +52,12 @@
 
 #define STR_HELPER(x)            #x
 #define STR(x)                   STR_HELPER(x)
-#define SOCKET_PATH_DEFAULT      "/tmp/wd-broker.sock"
+#define SOCKET_PATH_DEFAULT      "/run/wd-broker.sock"
 #define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
 #define SOCKET_READ_TIMEOUT_MS   200
 #define MAX_CLIENTS              64
 #define BUF_SIZE                 128
-#define LOOP_INTERVAL_DEFAULT_MS 1000
+#define LOOP_INTERVAL_DEFAULT_MS 10000
 #define LOOP_INTERVAL_MIN_MS     LOOP_INTERVAL_DEFAULT_MS
 #define LOOP_INTERVAL_MAX_MS     60000
 #define CLIENT_NAME_LEN          64
@@ -89,6 +93,7 @@ int           watchdog_fd = -1;
 volatile bool running = true;
 bool          watchdog_enabled = false;
 bool          test_mode = false;
+const char   *service_user = "wd-broker";
 
 void print_help(const char *progname) {
     printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
@@ -96,6 +101,7 @@ void print_help(const char *progname) {
     printf("  --test             Run in test mode (no /dev/watchdog access)\n");
     printf("  --interval <ms>    Set loop interval in milliseconds (default: %d)\n",
            LOOP_INTERVAL_DEFAULT_MS);
+    printf("  --service-user <user>  Set the service user (default: %s)\n", service_user);
     printf("  --syslog-facility  Set syslog facility (default: LOG_DAEMON)\n");
     printf("  --help             Show this help message\n");
     printf("  --version          Show version information\n");
@@ -434,11 +440,44 @@ void handle_command(int client_sock) {
     }
 }
 
-static void feed_watchdog(int fd, const char *msg) {
-    ssize_t w = write(fd, msg, strlen(msg));
-    if (w != (ssize_t)strlen(msg)) {
-        log_message(LOG_ERR, "write /dev/watchdog: %s", strerror(errno));
+int init_watchdog(int timeout) {
+    watchdog_fd = open("/dev/watchdog", O_WRONLY);
+    if (watchdog_fd == -1) {
+        fprintf(stderr, "ERROR: Failed to open /dev/watchdog: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
+    }
+    if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &timeout) == -1) {
+        fprintf(stderr, "ERROR: Failed to set watchdog timeout: %s\n", strerror(errno));
+        close(watchdog_fd);
+        exit(EXIT_FAILURE);
+    }
+    return watchdog_fd;
+}
+
+void feed_watchdog(int watchdog_fd) {
+    if (watchdog_fd != -1) {
+        int ret = write(watchdog_fd, "\0", 1);
+        if (ret != 1) {
+            log_message(LOG_ERR, "Failed to feed watchdog: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void close_watchdog(int watchdog_fd) {
+    if (watchdog_fd != -1) {
+        /* Legacy way */
+        const char c = 'V';
+        if (write(watchdog_fd, &c, 1) != 1) {
+            log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
+        }
+        /* Modern way */
+        int flags = WDIOS_DISABLECARD;
+        if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
+            log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
+        }
+        close(watchdog_fd);
+        watchdog_fd = -1;
     }
 }
 
@@ -474,24 +513,19 @@ int parse_syslog_facility(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
-    bool all_ok = true;
-
+    bool               all_ok = true;
     int                server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
-
-    int               timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
-    struct itimerspec timer_spec = {
-        .it_interval = {.tv_sec = loop_interval_ms / 1000,
-                        .tv_nsec = (loop_interval_ms % 1000) * 1000000},
-        .it_value = {.tv_sec = loop_interval_ms / 1000,
-                     .tv_nsec = (loop_interval_ms % 1000) * 1000000},
-    };
-
-    int facility = LOG_DAEMON;
+    int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
+    struct itimerspec  timer_spec = {0};
+    const char        *service_user = "wd-broker";
+    int                facility = LOG_DAEMON;
+    int                hwwd_timeout = 0;
 
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
         {"interval", required_argument, 0, 'i'},
+        {"service-user", required_argument, 0, 'u'},
         {"syslog-facility", required_argument, 0, 's'},
         {"test", no_argument, 0, 't'},
         {"version", no_argument, 0, 'v'},
@@ -506,6 +540,9 @@ int main(int argc, char *argv[]) {
                 return 0;
             case 'i':
                 loop_interval_ms = atoi(optarg);
+                break;
+            case 'u':
+                service_user = optarg;
                 break;
             case 's':
                 facility = parse_syslog_facility(optarg);
@@ -528,8 +565,45 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    hwwd_timeout = (loop_interval_ms + 500) / 1000;
+
+    /* We want to tick one second faster then the hardware watchdog to have a savety margin for
+     * scheduling jitter and high CPU loads. the minimum value of loop_interval_ms is
+     * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
+    loop_interval_ms -= 1000;
+    timer_spec.it_interval.tv_sec = loop_interval_ms / 1000;
+    timer_spec.it_interval.tv_nsec = (loop_interval_ms % 1000) * 1000000;
+    timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
+    timer_spec.it_value.tv_nsec = timer_spec.it_interval.tv_nsec;
+
     if (!test_mode) {
+
+        if (geteuid() != 0) {
+            fprintf(stderr, "Error: wd-broker must be started as root!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        watchdog_fd = init_watchdog(hwwd_timeout);
+        watchdog_enabled = true;
+
+        struct passwd *pw = getpwnam(service_user);
+        if (!pw) {
+            fprintf(stderr, "Error: Unknown user: %s\n", service_user);
+            exit(EXIT_FAILURE);
+        }
+        if (pw->pw_uid == 0) {
+            fprintf(stderr, "Error: Refusing to drop privileges to root!\n");
+            exit(EXIT_FAILURE);
+        }
+        if (setgroups(0, NULL) == -1 || setgid(pw->pw_gid) == -1 || setuid(pw->pw_uid) == -1) {
+            perror("Error: Failed to drop privileges");
+            exit(EXIT_FAILURE);
+        }
+
         openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
+        log_message(LOG_INFO, "Starting wd-broker v%s", PACKAGE_VERSION);
+        log_message(LOG_INFO, "Configued hardware watchdog timeout: %d seconds", hwwd_timeout);
+
         pid_t pid = fork();
         if (pid < 0) {
             log_message(LOG_CRIT, "fork: %s", strerror(errno));
@@ -538,14 +612,19 @@ int main(int argc, char *argv[]) {
         if (pid > 0) {
             return EXIT_SUCCESS;
         }
+        if (setsid() == -1) {
+            log_message(LOG_CRIT, "setsid: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
         if (chdir("/") != 0) {
             log_message(LOG_CRIT, "chdir: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-        setsid();
+        umask(0);
         fclose(stdin);
         fclose(stdout);
         fclose(stderr);
+
     } else {
         socket_path = SOCKET_PATH_TEST;
         log_message(LOG_INFO, "Running in test mode. /dev/watchdog will not be used.");
@@ -561,17 +640,7 @@ int main(int argc, char *argv[]) {
     bind(server_sock, (struct sockaddr *)&addr, sizeof(addr));
     listen(server_sock, 5);
 
-    chmod(socket_path, 0666);
-
-    if (!test_mode) {
-        watchdog_fd = open("/dev/watchdog", O_WRONLY);
-        if (watchdog_fd >= 0) {
-            watchdog_enabled = true;
-        } else {
-            log_message(LOG_CRIT, "open /dev/watchdog: %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
+    chmod(socket_path, 0660);
 
     timerfd_settime(timer_fd, 0, &timer_spec, NULL);
 
@@ -617,7 +686,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 if (watchdog_enabled && all_ok) {
-                    feed_watchdog(watchdog_fd, "V");
+                    feed_watchdog(watchdog_fd);
                 }
             }
         }
@@ -640,7 +709,7 @@ int main(int argc, char *argv[]) {
     log_message(LOG_INFO, "Exiting wd-broker...");
 
     if (watchdog_enabled) {
-        feed_watchdog(watchdog_fd, "V");
+        feed_watchdog(watchdog_fd);
         close(watchdog_fd);
     }
 
