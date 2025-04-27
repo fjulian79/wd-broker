@@ -490,25 +490,19 @@ int main(int argc, char *argv[]) {
     int facility = LOG_DAEMON;
 
     static struct option long_options[] = {
-        {"test", no_argument, 0, 't'},
         {"help", no_argument, 0, 'h'},
-        {"version", no_argument, 0, 'v'},
         {"interval", required_argument, 0, 'i'},
         {"syslog-facility", required_argument, 0, 's'},
+        {"test", no_argument, 0, 't'},
+        {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0},
     };
     int opt;
 
     while ((opt = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
         switch (opt) {
-            case 't':
-                test_mode = true;
-                break;
             case 'h':
                 print_help(argv[0]);
-                return 0;
-            case 'v':
-                printf("wd-broker v%s\n", PACKAGE_VERSION);
                 return 0;
             case 'i':
                 loop_interval_ms = atoi(optarg);
@@ -516,6 +510,12 @@ int main(int argc, char *argv[]) {
             case 's':
                 facility = parse_syslog_facility(optarg);
                 break;
+            case 't':
+                test_mode = true;
+                break;
+            case 'v':
+                printf("wd-broker v%s\n", PACKAGE_VERSION);
+                return 0;
             default:
                 print_help(argv[0]);
                 return 1;
