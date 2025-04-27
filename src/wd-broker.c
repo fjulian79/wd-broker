@@ -632,7 +632,6 @@ int main(int argc, char *argv[]) {
         log_message(LOG_INFO, "Using socket path: %s", socket_path);
     }
 
-    srand(time(NULL));
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
