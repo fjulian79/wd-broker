@@ -54,6 +54,7 @@
 #define STR(x)                   STR_HELPER(x)
 #define SOCKET_PATH_DEFAULT      "/run/wd-broker.sock"
 #define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
+#define SERVICE_USER_DEFAULT     "wd-broker"
 #define SOCKET_READ_TIMEOUT_MS   200
 #define MAX_CLIENTS              64
 #define BUF_SIZE                 128
@@ -88,12 +89,9 @@ typedef struct {
 
 uint32_t      loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
 char         *socket_path = SOCKET_PATH_DEFAULT;
-client_t      clients[MAX_CLIENTS];
-int           watchdog_fd = -1;
+const char   *service_user = SERVICE_USER_DEFAULT;
 volatile bool running = true;
-bool          watchdog_enabled = false;
 bool          test_mode = false;
-const char   *service_user = "wd-broker";
 
 void print_help(const char *progname) {
     printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
@@ -309,7 +307,7 @@ void signal_handler(int sig) {
     running = false;
 }
 
-void handle_command(int client_sock) {
+void handle_command(int client_sock, client_t *clients) {
     client_t      *pClient = {0};
     int32_t        ret = 0;
     char           buf[BUF_SIZE];
@@ -441,7 +439,7 @@ void handle_command(int client_sock) {
 }
 
 int init_watchdog(int timeout) {
-    watchdog_fd = open("/dev/watchdog", O_WRONLY);
+    int watchdog_fd = open("/dev/watchdog", O_WRONLY);
     if (watchdog_fd == -1) {
         fprintf(stderr, "ERROR: Failed to open /dev/watchdog: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
@@ -513,6 +511,9 @@ int parse_syslog_facility(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
+    client_t           clients[MAX_CLIENTS];
+    int                watchdog_fd = -1;
+    bool               watchdog_enabled = false;
     bool               all_ok = true;
     int                server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
@@ -659,7 +660,7 @@ int main(int argc, char *argv[]) {
             if (FD_ISSET(server_sock, &fds)) {
                 int client_sock = accept(server_sock, NULL, NULL);
                 if (client_sock >= 0) {
-                    handle_command(client_sock);
+                    handle_command(client_sock, clients);
                     close(client_sock);
                 }
             }
