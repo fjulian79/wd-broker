@@ -33,6 +33,9 @@ import tempfile
 MAX_CLIENTS = 64
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+TEST_BINARY = os.path.join(SCRIPT_DIR, "wd-broker")
+
 def log(level, *args):
     valid_levels = {"DEBUG", "INFO", "STEP", "ERROR"}
     if level not in valid_levels:
@@ -78,7 +81,7 @@ class TestBroker:
 
         self.log_stream = open(self.log_path, "w")
         self.proc = subprocess.Popen(
-            ["./wd-broker", "--test"],
+            [TEST_BINARY, "--test"],
             stdout=self.log_stream,
             stderr=subprocess.STDOUT
         )
