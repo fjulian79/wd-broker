@@ -637,7 +637,7 @@ int main(int argc, char *argv[]) {
         FD_SET(server_sock, &fds);
         FD_SET(timer_fd, &fds);
         ret = select(maxfd, &fds, NULL, NULL, &timeout);
-        if (ret > 0) {
+        if (ret >= 0) {
             if (FD_ISSET(server_sock, &fds)) {
                 int client_sock = accept(server_sock, NULL, NULL);
                 if (client_sock >= 0) {
@@ -649,6 +649,22 @@ int main(int argc, char *argv[]) {
                     all_ok = false; // oder exit(EXIT_FAILURE) bei sehr ernsten Fehlern
                 }
             }
+
+            for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+                if (clients[i].active) {
+                    uint32_t age = ms_since(&clients[i].last_ping);
+                    if (age > clients[i].timeout_ms) {
+                        log_message(LOG_ALERT,
+                                    "Client '%s' (PID %d, clientID=%s) missed heartbeat! (%u "
+                                    "ms > %d ms)",
+                                    clients[i].name, (int)clients[i].pid, clients[i].clientID,
+                                    age, clients[i].timeout_ms);
+                        all_ok = false;
+                        break;
+                    }
+                }
+            }
+
             if (FD_ISSET(timer_fd, &fds)) {
                 uint64_t expirations;
                 ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
@@ -656,20 +672,6 @@ int main(int argc, char *argv[]) {
                     fatal_error("read timerfd: %s", strerror(errno));
                 }
 
-                for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
-                    if (clients[i].active) {
-                        uint32_t age = ms_since(&clients[i].last_ping);
-                        if (age > clients[i].timeout_ms) {
-                            log_message(LOG_ALERT,
-                                        "Client '%s' (PID %d, clientID=%s) missed heartbeat! (%u "
-                                        "ms > %d ms)",
-                                        clients[i].name, (int)clients[i].pid, clients[i].clientID,
-                                        age, clients[i].timeout_ms);
-                            all_ok = false;
-                            break;
-                        }
-                    }
-                }
                 if (all_ok && watchdog_fd != -1) {
                     if (write(watchdog_fd, "\0", 1) != 1) {
                         fatal_error("Failed to feed watchdog: %s", strerror(errno));
