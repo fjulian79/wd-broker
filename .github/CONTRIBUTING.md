@@ -2,6 +2,16 @@
 
 Thank you for your interest in contributing to wd-broker! Contributions and feedback of any kind are welcome and highly appreciated.
 
+## Licensing Terms for Contributions
+
+By contributing to this project, you agree to the following terms:
+
+1. You grant the project maintainer(s) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, modify, distribute, and sublicense your contributions as part of this project.
+2. You acknowledge that the project maintainer(s) reserve the right to offer the project under multiple licenses, including commercial licenses, at their discretion.
+3. You confirm that you have the right to submit your contributions and that they do not violate any third-party rights.
+
+If you do not agree to these terms, please refrain from contributing to this project.
+
 ## How to Contribute
 
 ### Reporting Issues
@@ -29,6 +39,14 @@ I will review your Pull Request as soon as possible and may ask you for further 
 - Follow existing code structure and naming conventions.
 - Write clear comments and documentation for new features.
 - Use the project's provided clang-format configuration (.clang-format) to automatically format your code.
+
+## Project Maintainers
+
+The project maintainers are responsible for reviewing contributions, managing issues, and guiding the project's direction. For this repository, the maintainers are:
+
+- https://github.com/fjulian79 (Repository Owner)
+
+If you have questions or need clarification, feel free to mention the maintainers in issues or pull requests.
 
 ## Questions and Support
 

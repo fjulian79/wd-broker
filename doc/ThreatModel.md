@@ -16,14 +16,11 @@ If any active client fails to ping within its declared timeout, the broker will 
 
 ## Assumptions
 
-- Only users in a dedicated group (e.g. `wdclients`) can access the Unix socket.
-
-- It is acceptable for `root` to be able to unregister any client regardless of token validity, assuming that root already has full system control. This is relevant during development and test scenarios, and acceptable in production as well.
-
-- Clients are responsible for managing their client ID and authentication token securely.
-
-- The system should allow reboots in case of actual application failures (e.g. deadlocks), but resist intentional misuse.
-
+- Only users in a dedicated group (`wdclients`) and root can access the Unix socket.
+- It is acceptable for `root` to be able to unregister any client, assuming that root already has full system control. This is relevant during development and test scenarios, and acceptable in production as well.
+- Clients are responsible for managing their registration state securely.
+- The system assumes the integrity of the operating system and the `wdclients` group. If a member of the `wdclients` group is compromised, the broker cannot prevent misuse.
+- The system should allow reboots in case of actual application failures (e.g., deadlocks), but resist intentional misuse.
 - The broker is started as `root` but drops privileges after initialization (see below).
 
 ## Privilege Management
@@ -35,7 +32,7 @@ If any active client fails to ping within its declared timeout, the broker will 
 
 After completing these steps, the broker **drops privileges** using `setgid()` and `setuid()` to run as an unprivileged user within the `wdclients` group. This ensures that even if the broker process is compromised during runtime, the system impact is limited.
 
-To avoid disrupting a running instance, the broker performs a safety check before binding to the socket path. If the socket already exists, it attempts to connect to it. If a process is actively listening, the broker aborts with a clear error message. If the connection fails (e.g. with ECONNREFUSED), the socket is considered stale, and the broker may safely remove and recreate it.
+To avoid disrupting a running instance, the broker performs a safety check before binding to the socket path. If the socket already exists, it attempts to connect to it. If a process is actively listening, the broker aborts with a clear error message. If the connection fails (e.g., with ECONNREFUSED), the socket is considered stale, and the broker may safely remove and recreate it.
 
 This approach reduces the attack surface and aligns with least-privilege principles.
 
@@ -45,23 +42,17 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 ### 1. Spoofing (Identity Forgery)
 
-**Note:** As stated in the assumptions section, spoofing by `root` is not considered a threat, as root has full system control.
+**Threat:** A malicious process attempts to impersonate a legitimate client by using its `clientID`.
 
 **Mitigations:**
 
-- Each client receives a random `clientId` and an HMAC-based `token` during registration.
-- The token is bound to the client's `linux_uid` and is verified on every command.
-- Only processes belonging to the trusted group `wdclients` can connect to the socket (Unix file permissions).
-- Broker runs with dropped privileges after initialization to reduce spoofing risks if exploited.
-- The token mechanism is effective against spoofing attempts from other processes within the `wdclients` group, but not against a compromised client that already possesses a valid `clientId` and `token`.
-- Since the broker cannot enforce secure token handling on the client side, a compromised client can continue to interact with the broker using its own credentials.
-- This limitation is accepted by design: all members of the `wdclients` group are considered trusted, and token-based authentication serves as a lightweight safeguard against accidental misuse or implementation errors.
-- No official client library or implementation is provided, which means clients must take responsibility for correctly managing their registration state and credentials.
+- Each client is identified by its wd-broker `clientID` and `pid` during registration.
+- The broker verifies the `pid` of the process sending commands (e.g., `PING`, `UNREGISTER`) to ensure it matches the PID of the process that originally registered the `clientID`.
+- Only processes belonging to the trusted group `wdclients` can connect to the socket (enforced by Unix file permissions).
+- The broker runs with dropped privileges after initialization to reduce spoofing risks if exploited.
+- Since the broker cannot enforce secure handling of client state on the client side, a compromised client can continue to interact with the broker using its own `clientID`. This limitation is accepted by design: all members of the `wdclients` group are considered trusted, and authentication serves as a lightweight safeguard against accidental misuse or implementation errors.
 
-- Each client receives a random `clientId` and an HMAC-based `token` during registration.
-- The token is bound to the client's `linux_uid` and is verified on every command.
-- Only processes belonging to the trusted group `wdclients` can connect to the socket (Unix file permissions).
-- Broker runs with dropped privileges after initialization to reduce spoofing risks if exploited.
+---
 
 ### 2. Tampering (Data Manipulation)
 
@@ -74,14 +65,16 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 **Mitigations:**
 
-- The socket protocol is request-response per connection with stateless handling
-- Tokens are cryptographically verified and bound to both `clientId` and `linux_uid`
-- Broker memory (client table) is private to the process; no external tampering possible
-- Privilege drop ensures internal state cannot be overwritten by unprivileged processes
+- The broker verifies the `pid` of the process sending `PING` commands to ensure it matches the original registering process.
+- The socket protocol is request-response per connection with stateless handling.
+- Broker memory (client table) is private to the process; no external tampering is possible.
+- Privilege drop ensures internal state cannot be overwritten by unprivileged processes.
+
+---
 
 ### 3. Repudiation (Denying Responsibility)
 
-**Threat:** A client claims it did not perform a certain action (e.g. deregistering).
+**Threat:** A client claims it did not perform a certain action (e.g., deregistering).
 
 **Risks:**
 
@@ -89,68 +82,69 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 **Mitigations:**
 
-- Optional logging with timestamp, UID, GID, PID for each client action
-- Deterministic behavior: same inputs lead to same state
+- Optional logging with timestamp, UID, GID, and PID for each client action.
+- Deterministic behavior: same inputs lead to the same state.
+
+---
 
 ### 4. Information Disclosure
 
-**Threat:** Unauthorized access to sensitive client data
+**Threat:** Unauthorized access to sensitive client data.
 
 **Risks:**
 
-- Leaking another client's `clientId` and `token`
+- Leaking another client's registration state
 
 **Mitigations:**
 
-- Socket is only accessible to the `wdclients` group
-- Tokens are never sent over insecure channels or persisted by broker
-- Secrets are stored only in RAM and regenerated on each broker restart
-- Broker runs as unprivileged user to minimize leakage surface
+- Socket is only accessible to the `wdclients` group.
+- Secrets are stored only in RAM and are not persisted by the broker.
+- Broker runs as an unprivileged user to minimize the leakage surface.
+- Even if a `clientID` is compromised, its use requires the `pid` to match the original registering process, which is considered highly unlikely in practice.
+
+---
 
 ### 5. Denial of Service (DoS)
 
-**Threat:** Causing broker malfunction or triggering false watchdog expiry
+**Threat:** Causing broker malfunction or triggering false watchdog expiry.
 
 **Risks:**
 
-- Flooding with REGISTER or PING to exhaust resources
-- Registering a fake client and letting it timeout
-- Overloading the socket to block real clients
-- Overwriting an active socket used by a running instance
+- Flooding the broker with excessive `REGISTER` or `PING` requests to exhaust resources.
+- Registering a fake client and letting it timeout.
+- Overloading the socket to block legitimate clients.
+- Overwriting an active socket used by a running instance.
 
 **Mitigations:**
 
-- Maximum number of clients is limited
-- Per-client registration limits (e.g. 1 per UID)
-- No rate limiting is applied, as performance during system startup takes priority. 
-    - The broker is designed to handle a high rate of incoming connections efficiently and to fail fast on invalid or unexpected inputs, rather than attempting to throttle or queue them. 
-    - This design choice ensures rapid availability of all components after boot and avoids unnecessary complexity.
-- The broker drops privileges after initialization to prevent that even if the broker is overloaded or misused, access to /dev/watchdog cannot be escalated or abused.
-- Broker verifies socket state on startup: it only removes and recreates the socket if no process is listening (stale socket); otherwise it aborts to prevent accidental interference.
+- Only processes belonging to the `wdclients` group or `root` can access the Unix domain socket. This prevents unauthorized users from interacting with the broker.
+
+---
 
 ### 6. Elevation of Privilege
 
-**Threat:** Unauthorized user gains higher access via broker
+**Threat:** Unauthorized user gains higher access via broker.
 
 **Risks:**
 
-- Misusing broker to gain root access or write to /dev/watchdog
+- Misusing broker to gain root access or write to `/dev/watchdog`.
 
 **Mitigations:**
 
-- Broker starts as root only to open `/dev/watchdog`, then drops to unprivileged user
-- Only feeds /dev/watchdog; no general-purpose execution or file access
-- Socket group restriction prevents non-members from connecting
+- Broker starts as root only to open `/dev/watchdog`, then drops to an unprivileged user.
+- Only feeds `/dev/watchdog`; no general-purpose execution or file access.
+- Socket group restriction prevents non-members from connecting.
 
 ---
 
 ## Conclusion
 
-The `wd-broker` daemon is designed to minimize trust while offering a robust watchdog supervision service. The system assumes local attackers with limited privileges and hardens against them through a combination of access control, cryptographic tokens, memory-only secrets, strict protocol validation, socket safety checks, and privilege dropping.
+The `wd-broker` daemon is designed to minimize trust while offering a robust watchdog supervision service. The system assumes local attackers with limited privileges and hardens against them through a combination of:
 
-A stronger challenge-response authentication mechanism was considered but ultimately deliberately avoided. Implementing such a system would require client-side encryption capabilities, secure key management, and additional protocol complexity. These requirements would have necessitated the introduction of a client library. This would have raised the question of which language or runtime to target. A C/C++ implementation alone was deemed insufficient and would have limited interoperability and usability across diverse environments. Instead, wd-broker pursues a minimalist and uncluttered design, sacrificing some cryptographic accuracy for clarity, portability, and ease of integration.
-
-While the token mechanism increases robustness against spoofing, it does not protect against misuse by clients that are already trusted and possess valid credentials. This is a deliberate trade-off, as all `wdclients` members are assumed to be cooperative. Since there is no reference client implementation, secure handling of `clientId` and `token` is the responsibility of each client.
+- **Access control**: Restricting socket access to the `wdclients` group.
+- **Stateless protocol**: Ensuring predictable behavior and minimizing resource usage.
+- **Privilege dropping**: Running as an unprivileged user after initialization.
+- **Socket safety checks**: Verifying and recreating stale sockets to prevent interference.
 
 By explicitly defining threats using STRIDE, the design remains transparent and auditable for safety-critical contexts.
 
@@ -158,19 +152,16 @@ By explicitly defining threats using STRIDE, the design remains transparent and 
 
 ## Status
 
-| Item | Implemented | Commit |
-|------|-------------|--------|
-| Max client limit enforcement | ✅ | f9714086c52b996ce42d1ea769df967992def212 |
-| Logging (UID, GID, PID on actions, ...) | ⬜ | — |
-| UDS socket with group-based access control | ⬜ | — |
-| Socket reuse detection and stale cleanup | ⬜ | — |
-| Privilege dropping after startup | ⬜ | — |
-| clientId entropy upgrade (256 bit) | ⬜ | — |
-| clientId uniqueness | ⬜ | — |
-| Per-UID client registration limit | ⬜ | — |
-| Token generation and HMAC verification | ⬜ | — |
+| Threat                     | Mitigation                    | Status              |
+|----------------------------|-------------------------------|---------------------|
+| Spoofing                   | PID verification              | Implemented         |
+| Tampering                  | Stateless protocol            | Implemented         |
+| Information Disclosure     | Socket access control         | Implemented         |
+| Denial of Service (DoS)    | Limited socket access         | Implemented         |
+| Elevation of Privilege     | Privilege dropping            | Implemented         |
+| Logging (UID, GID, PID)    | Optional logging              | Planned             |
 
 ---
 
-*Last updated: 2025-04-20*
+*Last updated: 2025-05-01*
 

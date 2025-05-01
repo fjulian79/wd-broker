@@ -2,21 +2,19 @@
 
 > ⚠️ **Work in Progress**: This project is under active development and not yet production-ready. Use at your own risk. Interfaces and behavior may change at any time.
 
-`wd-broker` is a lightweight, POSIX-compliant watchdog supervisor for Linux-based systems. It acts as the **central authority for feeding the hardware watchdog** (`/dev/watchdog`) and allows multiple heterogeneous applications to register themselves, define individual timeout values, and send heartbeat messages.
+`wd-broker` is a lightweight watchdog supervisor for Linux-based systems, designed to manage hardware watchdogs and ensure system reliability by coordinating heartbeat signals from multiple applications. It acts as the **central authority for feeding the hardware watchdog** (`/dev/watchdog`) and allows multiple heterogeneous applications to register themselves, define individual timeout values, and send heartbeat messages.
 
 Designed for **reliability-critical systems**, `wd-broker` ensures that the hardware watchdog only gets fed when **all registered clients are responsive** – enabling true system resets when necessary.
-
 
 ## Features
 
 - Centralized control over `/dev/watchdog`
 - Simple, line-based protocol over Unix domain socket
 - Each client defines its own timeout
-- Works with C binaries, Python scripts, shell tools, or inside containers
-- Test mode for development and unit testing (no real watchdog triggered)
+- Must be started as root but runs as a non-root user after initializing `/dev/watchdog` for enhanced security (privilege dropping)
+- Restricts access to the used Unix domain socket to authorized users or groups (access control)
+- Works with C binaries, Python scripts, shell tools, or whatever can use a Unix domain socket
 - Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
-- Clean and efficient implementation in portable C (POSIX)
-- Uses `timerfd` for precise and decoupled watchdog ticking
 
 ## Security
 
@@ -43,11 +41,14 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 ### Command-line options
 
-- `--test`: run without accessing `/dev/watchdog`
-- `--interval <ms>`: set the watchdog tick interval (default: 1000 ms)
-- `--syslog-facility <facility>`: Set syslog facility (default: LOG_DAEMON), Supports LOG_DAEMON, LOG_USER and LOG_LOCAL*
-- `--version`: show version
-- `--help`: show usage info
+- `--test`: Run without accessing `/dev/watchdog` (useful for development and testing).
+- `--interval <ms>`: Set the watchdog tick interval in milliseconds (default: 1000 ms).
+- `--syslog-facility <facility>`: Set the syslog facility for logging (default: `LOG_DAEMON`). Supported values:
+  - `LOG_DAEMON`
+  - `LOG_USER`
+  - `LOG_LOCAL0` through `LOG_LOCAL7`
+- `--version`: Display the current version of `wd-broker`.
+- `--help`: Show usage information and exit.
 
 ## Protocol
 

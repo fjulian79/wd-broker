@@ -39,4 +39,4 @@ You can also run individual tests:
 ## Requirements
 
 - Python 3
-- POSIX-compliant shell (e.g. bash, busybox ash)
+- Shell (e.g. bash, busybox ash)

@@ -1,20 +1,23 @@
 # Reporting Security Issues
 
-I take security issues in wd-broker seriously and appreciate any efforts to responsibly disclose vulnerabilities.
+Security issues in `wd-broker` are taken seriously, and responsible disclosure of vulnerabilities is greatly appreciated.
 
-If you believe you have found a security issue in wd-broker, please use the GitHub Security Advisory feature via the ["Report a Vulnerability"](https://github.com/DEIN-GITHUB-USERNAME/wd-broker/security/advisories/new) tab.
+If you believe you have found a security issue in `wd-broker`, please use the GitHub Security Advisory feature via the ["Report a Vulnerability"](https://github.com/fjulian79/wd-broker/security/advisories/new) tab.
 
-I will review your report promptly and respond with the next steps. You'll be kept informed as I investigate and, if needed, work on a fix and public disclosure. I may reach out for further details to better understand and resolve the issue.
+Reports will be reviewed promptly, and appropriate steps will be taken to investigate, address, and disclose the issue. Reporters will be kept informed throughout the process and may be contacted for additional details to better understand and resolve the issue.
 
 ## Reporting Vulnerabilities in Dependencies
 
-If the vulnerability is in a third-party library or tool used by wd-broker, please report it directly to the maintainers of that component. If you're unsure, feel free to report it here — I’ll try to route it appropriately.
+If the vulnerability is in a third-party library or tool used by `wd-broker`, it is recommended to report it directly to the maintainers of that component. 
 
 ## Security Notification Process
 
-If a vulnerability is confirmed, I’ll try to fix it as soon as possible and let you know once a patch is available. If you reported it, you’ll be informed before any public mention.
+Once a vulnerability is confirmed:
+1. A fix will be developed and tested as quickly as possible.
+2. The reporter will be informed of the resolution before any public disclosure.
+3. A public advisory will be issued, including details of the vulnerability and the steps taken to address it.
 
 ## Learn More
 
-To learn more about wd-broker’s design and threat model, please refer to the [project documentation](./README.md). You can also find the current threat model in [doc/ThreatModel.md](./doc/ThreatModel.md). I am committed to building a secure foundation for embedded Linux systems, with simplicity, clarity, and robustness as core principles.
+For more information about `wd-broker`’s design and threat model, refer to the [project documentation](./README.md). The current threat model is detailed in [doc/ThreatModel.md](./doc/ThreatModel.md). The project is committed to providing a secure foundation for embedded Linux systems, with simplicity, clarity, and robustness as core principles.
 
