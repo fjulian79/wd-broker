@@ -14,6 +14,7 @@
 
 # Build output
 wd-broker*
+wd-ctrl
 src/.dirstamp
 src/.deps/
 

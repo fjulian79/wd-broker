@@ -120,6 +120,22 @@ UNREGISTER a4b7c8e912d0fc13
 → OK
 ```
 
+#### STATUS
+Returns system-level information and all active clients.
+
+- Only allowed if the calling process is root.
+- Response includes watchdog timeout, number of registered clients, and a list of known clients:
+  `<clientID> <pid> <name> <timeout_ms>`
+
+Example:
+```
+STATUS
+→ Watchdog timeout: 10 seconds
+→ Clients registered: 2
+→ 4f3c0d9e8a1b4f21 1234 watchdogd 10000
+→ 1a2b3c4d5e6f7g89 4321 sensorX 30000
+```
+
 ---
 
 ### Notes and Limitations

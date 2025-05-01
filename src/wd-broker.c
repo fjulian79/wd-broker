@@ -72,6 +72,7 @@
 #define CMD_REGISTER            "REGISTER "
 #define CMD_PING                "PING "
 #define CMD_UNREGISTER          "UNREGISTER "
+#define CMD_STATUS              "STATUS"
 #define CLIENT_IDENTIFIED       0
 #define CLIENT_PID_MISMATCH     -1
 #define CLIENT_NOT_FOUND        -2
@@ -407,14 +408,44 @@ void handle_command(int client_sock, client_t *clients) {
                 write_str(client_sock, "OK\n");
                 return;
             case CLIENT_PID_MISMATCH:
-                write_str(client_sock, "ERROR wrong PID\n");
-                log_message(LOG_WARNING,
-                            "Client '%s', known as PID %d has sent UNREGISTER from PID %d",
-                            pClient->name, (int)pClient->pid, (int)creds.pid);
-                return;
+                if (creds.uid == 0) {
+                    pClient->active = false;
+                    write_str(client_sock, "OK\n");
+                    log_message(LOG_INFO, "Client '%s' (PID %d) unregistered by root (clientID=%s)",
+                                pClient->name, (int)pClient->pid, pClient->clientID);
+                    return;
+                } else {
+                    write_str(client_sock, "ERROR wrong PID\n");
+                    log_message(LOG_WARNING,
+                                "Client '%s', known as PID %d has sent UNREGISTER from PID %d",
+                                pClient->name, (int)pClient->pid, (int)creds.pid);
+                    return;
+                }
             default:
                 write_str(client_sock, "ERROR unknown clientID\n");
                 return;
+        }
+
+    } else if (strncmp(buf, CMD_STATUS, strlen(CMD_STATUS)) == 0) {
+        if (creds.pid != 0 && creds.uid != 0) {
+            write_str(client_sock, "ERROR no permission\n");
+            log_message(LOG_ERR, "Client with PID %d tried to list clients", (int)creds.pid);
+            return;
+        }
+
+        write_str(client_sock, "Watchdog timeout: %d seconds\n", wd_timeout_s);
+        uint8_t active_clients = 0;
+        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+            if (clients[i].active) {
+                active_clients++;
+            }
+        }
+        write_str(client_sock, "Clients registered: %d\n", active_clients);
+        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+            if (clients[i].active) {
+                write_str(client_sock, "%s %d %s %u\n", clients[i].clientID, (int)clients[i].pid,
+                          clients[i].name, clients[i].timeout_ms);
+            }
         }
 
     } else {
