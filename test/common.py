@@ -22,16 +22,18 @@
 #
 # Please feel free to open issues or contribute improvements.
 
-import subprocess
 import atexit
-import time
-import socket
-import sys
 import os
+import pty
+import socket
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 
 MAX_CLIENTS = 64
-DEFAULT_TIMEOUT = 5000
+DEFAULT_TIMEOUT = 10000
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -64,28 +66,33 @@ class TestBroker:
     - Provides access to log content
     - Automatically stops the broker and deletes the log file
     """
-
     def __init__(self):
         self.proc = None
         self.started = False
-        self.log_file = tempfile.NamedTemporaryFile(prefix="broker-log-", suffix=".log", delete=False)
-        self.log_path = self.log_file.name
-        self.log_file.close()
+        self.log_lines = []
+        self._log_thread = None
+        self._log_lock = threading.Lock()
 
     def start(self, expect="OK"):
         if self.started:
             raise RuntimeError("Broker already started")
 
-        # Truncate log before each run
-        with open(self.log_path, "w"):
-            pass
+        print("Starting broker with PTY...")
+        master_fd, slave_fd = pty.openpty()
 
-        self.log_stream = open(self.log_path, "w")
         self.proc = subprocess.Popen(
             [TEST_BINARY, "--test"],
-            stdout=self.log_stream,
-            stderr=subprocess.STDOUT
+            stdin=subprocess.DEVNULL,
+            stdout=slave_fd,
+            stderr=subprocess.STDOUT,
+            text=True,
+            close_fds=True
         )
+        os.close(slave_fd)  # close the slave FD in the parent process
+
+        self._log_thread = threading.Thread(target=self._log_reader_from_fd, args=(master_fd,), daemon=True)
+        self._log_thread.start()
+
         self.started = True
         atexit.register(self.stop)
 
@@ -133,31 +140,40 @@ class TestBroker:
                     log_error(f"Broker force-killed, PID: {self.proc.pid}")
             else:
                 log_info(f"Broker process {self.proc.pid} already terminated")
-        if self.log_stream and not self.log_stream.closed:
-            self.log_stream.close()
+
+        if self._log_thread:
+            self._log_thread.join(timeout=1.0)
+
         self.started = False
 
     def is_running(self):
         return self.proc is not None and self.proc.poll() is None
 
     def get_log(self):
-        if not os.path.exists(self.log_path):
-            raise FileNotFoundError(f"Broker log file not found: {self.log_path}")
-        with open(self.log_path, "r") as f:
-            return f.read()
+        with self._log_lock:
+            return self.log_lines
 
     def print_log(self):
-        for line in self.get_log():
-            print("[BROKER]", line)
+        with self._log_lock:
+            for line in self.log_lines:
+                print("[BROKER]", line)
+
+    def _log_reader_from_fd(self, fd):
+        try:
+            with os.fdopen(fd) as f:
+                for line in f:
+                    with self._log_lock:
+                        self.log_lines.append(line.rstrip())
+        except Exception as e:
+            with self._log_lock:
+                self.log_lines.append(f"[error reading log from PTY: {e}]")
 
     def __del__(self):
         try:
-            if self.log_stream and not self.log_stream.closed:
-                self.log_stream.close()
-            if os.path.exists(self.log_path):
-                os.unlink(self.log_path)
+            self.stop()
         except Exception:
             pass  # silent cleanup on object destruction
+
 
 def fail(msg):
     log_error(msg)

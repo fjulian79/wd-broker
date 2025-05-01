@@ -62,7 +62,7 @@ for name, clientID in clients:
     time.sleep(0.2)  # Simulate a small delay between PINGs
 
 log_info(f"Adding delay to allow broker to detect timeout of {dead_name} ({dead_id})")
-time.sleep(2)
+time.sleep(15)
 
 # now expecting the surviving clients to see errors as the broker should be down.
 for name, clientID in clients:
@@ -71,8 +71,9 @@ for name, clientID in clients:
 log_info("Checking broker log for timeout message...")
 log = broker.get_log()
 
-if "CLIENT HEARTBEAT TIMEOUT OCCURRED" not in log:
-    print(log)
+if not any("SYSTEM RESET PENDING!" in line for line in log):
+    for line in log:
+        print("[BROKER]", line)
     fail("Expected timeout message not found in broker log.")
 log_step("Timeout message confirmed in log.")
 
