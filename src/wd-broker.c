@@ -264,8 +264,8 @@ int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, c
         if (clients[i].active &&
             strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
             *client = &clients[i];
-            /* Check if the clientID is registered with a PID the checkPID flag is here for 
-             * future use to allow clients to turn of the pid check. But this should be be 
+            /* Check if the clientID is registered with a PID the checkPID flag is here for
+             * future use to allow clients to turn of the pid check. But this should be be
              * allowed only when they register to avoid abuse. */
             if (clients[i].checkPID == false || clients[i].pid == pid) {
                 return CLIENT_IDENTIFIED;
@@ -593,7 +593,7 @@ int main(int argc, char *argv[]) {
         close(probe_fd);
 
         if (unlink(socket_path) == 0) {
-            printf("Removed stale socket at '%s'", socket_path);
+            printf("Removed stale socket at '%s'\n", socket_path);
         } else {
             fatal_errno("unlink");
         }
@@ -620,9 +620,9 @@ int main(int argc, char *argv[]) {
 
     /* Opening the watchdog device is not mandatory, but if it is enabled, we need to
      * open it as root. We also need to set the timeout here, because the watchdog
-     * driver does not support setting the timeout after opening the device. 
+     * driver does not support setting the timeout after opening the device.
      * We want to do this as late as pissible avoiding to open the device
-     * in case there is anything wring with the given user parameters or the client 
+     * in case there is anything wring with the given user parameters or the client
      * socket. */
     if (watchdog_enabled) {
         if (!started_as_root) {
@@ -690,11 +690,11 @@ int main(int argc, char *argv[]) {
         FD_SET(timer_fd, &fds);
         ret = select(maxfd, &fds, NULL, NULL, &timeout);
         if (ret >= 0) {
-            /* If there is a select() timeout, a event on the timerfd or a new connection 
-             * on the server socket we also want to check the clients to detect timeouts 
+            /* If there is a select() timeout, a event on the timerfd or a new connection
+             * on the server socket we also want to check the clients to detect timeouts
              * as early as possible */
 
-             /* first process a client input to do not delay a heartbeat */
+            /* first process a client input to do not delay a heartbeat */
             if (FD_ISSET(server_sock, &fds)) {
                 int client_sock = accept(server_sock, NULL, NULL);
                 if (client_sock >= 0) {
@@ -715,8 +715,8 @@ int main(int argc, char *argv[]) {
                         log_message(LOG_CRIT,
                                     "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u "
                                     "ms > %d ms)",
-                                    clients[i].name, (int)clients[i].pid, clients[i].clientID,
-                                    age, clients[i].timeout_ms);
+                                    clients[i].name, (int)clients[i].pid, clients[i].clientID, age,
+                                    clients[i].timeout_ms);
                         all_ok = false;
                         break;
                     }
