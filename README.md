@@ -41,25 +41,97 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 ### Command-line options
 
-- `--test`: Run without accessing `/dev/watchdog` (useful for development and testing).
-- `--interval <ms>`: Set the watchdog tick interval in milliseconds (default: 1000 ms).
-- `--syslog-facility <facility>`: Set the syslog facility for logging (default: `LOG_DAEMON`). Supported values:
-  - `LOG_DAEMON`
+- `--help`:  
+  Shows a help message with all available options and exits.
+
+- `--version`:  
+  Displays the current version of `wd-broker` and exits.
+
+- `--daemonize`:  
+  Runs the broker as a background daemon process. By default, it runs in the foreground.
+
+- `--wd-timeout <seconds>`:  
+  Sets the hardware watchdog timeout in seconds. Must be between `10` and `60`. Internally, the broker ticks one second faster than the configured timeout to ensure a safety margin.
+
+- `--socket-path <path>`:  
+  Specifies the Unix domain socket path used for communication. Default: `/run/wd-broker.sock`
+
+- `--service-user <username>`:  
+  Drops privileges to the specified user after initialization. Must not be `root`. Default: `wd-broker`
+
+- `--syslog-facility <facility>`:  
+  Specifies the syslog facility when running as a daemon. Supported values:
+  - `LOG_DAEMON` (default)
   - `LOG_USER`
   - `LOG_LOCAL0` through `LOG_LOCAL7`
-- `--version`: Display the current version of `wd-broker`.
-- `--help`: Show usage information and exit.
 
-## Protocol
+- `--no-watchdog`:  
+  Disables the hardware watchdog logic. The broker runs in simulation/test mode.
 
-Clients talk to the broker via a Unix domain socket (`/tmp/wd-broker.sock`).\
-The protocol is simple and line-based:
+---
 
-- `REGISTER <name> <timeout_ms>` → responds with `OK <uid>` or `ERROR`
-- `PING <uid>` → responds with `OK` or `ERROR`
-- `UNREGISTER <uid>` → responds with `OK` or `ERROR`
+### Protocol
 
-Commands may optionally be terminated with a newline (\\n). Newlines are ignored during parsing. This allows compatibility with interactive tools like telnet, socat, or echo.
+Clients communicate with the broker via a Unix domain socket (default: `/run/wd-broker.sock`).
+The protocol is simple and line-based. Each connection handles exactly **one command**, and is then closed by the broker.
+
+**General Rules:**
+- Commands are case-sensitive.
+- Maximum command length: 127 characters.
+- Commands may be terminated with `\n` (newline). Trailing newlines are ignored.
+- Up to 64 clients can be registered concurrently.
+- Commands are processed synchronously per connection.
+
+#### REGISTER `<name>` `<timeout_ms>`
+Registers a new client.
+
+- `name`: Printable ASCII string, max 63 characters, no spaces.
+- `timeout_ms`: Integer between 5000 and 300000 (5s to 5min).
+- Response: `OK <clientID>` or `ERROR <reason>`
+- `clientID` is a unique 16-character lowercase hex string assigned by the broker.
+
+Example:
+```
+REGISTER sensorA 15000
+→ OK a4b7c8e912d0fc13
+```
+
+#### PING `<clientID>`
+Renews the client's heartbeat.
+
+- The client's PID must match the PID stored during registration.
+- Response: `OK`, `ERROR wrong PID`, `ERROR unknown clientID`, or syntax-related error.
+
+Example:
+```
+PING a4b7c8e912d0fc13
+→ OK
+```
+
+#### UNREGISTER `<clientID>`
+Removes a client from the active list.
+
+- PID validation is enforced.
+- Response: `OK` or `ERROR <reason>`
+
+Example:
+```
+UNREGISTER a4b7c8e912d0fc13
+→ OK
+```
+
+---
+
+### Notes and Limitations
+
+- Each client is uniquely identified by both its `clientID` and its process ID (`pid`).
+- Heartbeat failures result in the broker logging a critical error and exiting to trigger a system reset.
+- The broker does not support authentication; security relies on the Unix socket permissions and PID matching.
+- Socket reuse is checked on startup. If a previous instance left a stale socket, it is removed unless a running broker is detected.
+- The broker must be started as root if hardware watchdog access is enabled, but will drop privileges before accepting connections.
+- Clients must re-register after a broker restart.
+- The `LIST` command is diagnostic only and not intended for runtime monitoring by applications.
+
 
 ## Testing
 
