@@ -511,7 +511,7 @@ int parse_syslog_facility(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
-    client_t           clients[MAX_CLIENTS];
+    client_t           clients[MAX_CLIENTS] = {0};
     int                watchdog_fd = -1;
     bool               watchdog_enabled = false;
     bool               all_ok = true;
