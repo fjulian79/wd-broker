@@ -81,7 +81,7 @@ class TestBroker:
         master_fd, slave_fd = pty.openpty()
 
         self.proc = subprocess.Popen(
-            [TEST_BINARY, "--test"],
+            [TEST_BINARY, "--no-watchdog", "--socket-path", SOCKET_PATH],
             stdin=subprocess.DEVNULL,
             stdout=slave_fd,
             stderr=subprocess.STDOUT,

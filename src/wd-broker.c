@@ -89,20 +89,22 @@ typedef struct {
 
 uint32_t      loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
 char         *socket_path = SOCKET_PATH_DEFAULT;
-const char   *service_user = SERVICE_USER_DEFAULT;
 volatile bool running = true;
-bool          test_mode = false;
+bool          daemonize = false;
 
 void print_help(const char *progname) {
     printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
     printf("\nOptions:\n");
-    printf("  --test             Run in test mode (no /dev/watchdog access)\n");
-    printf("  --interval <ms>    Set loop interval in milliseconds (default: %d)\n",
-           LOOP_INTERVAL_DEFAULT_MS);
-    printf("  --service-user <user>  Set the service user (default: %s)\n", service_user);
-    printf("  --syslog-facility  Set syslog facility (default: LOG_DAEMON)\n");
-    printf("  --help             Show this help message\n");
-    printf("  --version          Show version information\n");
+    printf("  --help                    Show this help message\n");
+    printf("  --version                 Show version information\n");
+    printf("  --daemonize               Run as a daemon (default: false)\n");
+    printf("  --wd-timeout <ms>         Set hardware watchdog timeout (default: %d sec.)\n",
+           loop_interval_ms);
+    printf("  --socket-path <path>      Set socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
+    printf("  --service-user <user>     Set the service user (default: %s)\n",
+           SERVICE_USER_DEFAULT);
+    printf("  --syslog-facility         Set syslog facility (default: LOG_DAEMON)\n");
+    printf("  --no-watchdog             Do not use the hardware watchdog (default: false)\n");
 }
 
 void fatal_errno(const char *context) {
@@ -124,7 +126,7 @@ void log_message(int priority, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
 
-    if (test_mode) {
+    if (!daemonize) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
         struct tm tmb;
@@ -469,11 +471,13 @@ int main(int argc, char *argv[]) {
     bool               started_as_root = geteuid() == 0 ? true : false;
 
     static struct option long_options[] = {
+        {"daemonize", no_argument, 0, 'd'},
         {"help", no_argument, 0, 'h'},
-        {"interval", required_argument, 0, 'i'},
+        {"no-watchdog", no_argument, 0, 'n'},
         {"service-user", required_argument, 0, 'u'},
+        {"socket-path", required_argument, 0, 'p'},
         {"syslog-facility", required_argument, 0, 's'},
-        {"test", no_argument, 0, 't'},
+        {"wd-timeout", required_argument, 0, 't'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0},
     };
@@ -481,28 +485,33 @@ int main(int argc, char *argv[]) {
 
     while ((opt = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
         switch (opt) {
+            case 'd':
+                daemonize = true;
+                break;
             case 'h':
                 print_help(argv[0]);
-                return 0;
-            case 'i':
-                loop_interval_ms = atoi(optarg);
+                return EXIT_SUCCESS;
+            case 'n':
+                watchdog_enabled = false;
                 break;
-            case 'u':
-                service_user = optarg;
+            case 'p':
+                socket_path = optarg;
                 break;
             case 's':
                 facility = parse_syslog_facility(optarg);
                 break;
             case 't':
-                socket_path = SOCKET_PATH_TEST;
-                test_mode = true;
+                hwwd_timeout = atoi(optarg);
+                break;
+            case 'u':
+                service_user = optarg;
                 break;
             case 'v':
                 printf("wd-broker v%s\n", PACKAGE_VERSION);
                 return 0;
             default:
                 print_help(argv[0]);
-                return 1;
+                return EXIT_FAILURE;
         }
     }
 
@@ -580,7 +589,7 @@ int main(int argc, char *argv[]) {
         fatal_errno("chown");
     }
 
-    if (!test_mode) {
+    if (watchdog_enabled) {
         if (!started_as_root) {
             fatal_error("wd-broker must be started as root!\n");
         }
@@ -592,8 +601,9 @@ int main(int argc, char *argv[]) {
         if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &hwwd_timeout) == -1) {
             fatal_error("Failed to set watchdog timeout: %s\n", strerror(errno));
         }
-        watchdog_enabled = true;
+    }
 
+    if (started_as_root) {
         if (setgroups(0, NULL) == -1) {
             fatal_errno("setgroups");
         }
@@ -603,7 +613,9 @@ int main(int argc, char *argv[]) {
         if (setuid(pw->pw_uid) == -1) {
             fatal_errno("setuid");
         }
+    }
 
+    if (daemonize) {
         pid_t pid = fork();
         if (pid < 0) {
             fatal_errno("fork");
