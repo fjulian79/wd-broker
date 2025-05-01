@@ -640,7 +640,6 @@ int main(int argc, char *argv[]) {
         FD_ZERO(&fds);
         FD_SET(server_sock, &fds);
         FD_SET(timer_fd, &fds);
-
         ret = select(maxfd, &fds, NULL, NULL, &timeout);
         if (ret > 0) {
             if (FD_ISSET(server_sock, &fds)) {
@@ -648,6 +647,10 @@ int main(int argc, char *argv[]) {
                 if (client_sock >= 0) {
                     handle_command(client_sock, clients);
                     close(client_sock);
+                } else if (!(errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNABORTED ||
+                             errno == EINTR)) {
+                    log_message(LOG_ERR, "accept: %s", strerror(errno));
+                    all_ok = false; // oder exit(EXIT_FAILURE) bei sehr ernsten Fehlern
                 }
             }
             if (FD_ISSET(timer_fd, &fds)) {
