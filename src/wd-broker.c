@@ -678,6 +678,9 @@ int main(int argc, char *argv[]) {
                     feed_watchdog(watchdog_fd);
                 }
             }
+        } else if (ret < 0 && errno != EINTR) {
+            log_message(LOG_CRIT, "select: %s", strerror(errno));
+            all_ok = false;
         }
     }
 
