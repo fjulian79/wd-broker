@@ -654,8 +654,8 @@ int main(int argc, char *argv[]) {
                 if (clients[i].active) {
                     uint32_t age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {
-                        log_message(LOG_ALERT,
-                                    "Client '%s' (PID %d, clientID=%s) missed heartbeat! (%u "
+                        log_message(LOG_CRIT,
+                                    "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u "
                                     "ms > %d ms)",
                                     clients[i].name, (int)clients[i].pid, clients[i].clientID,
                                     age, clients[i].timeout_ms);
@@ -690,7 +690,7 @@ int main(int argc, char *argv[]) {
          * intentional reset if the watchdog is enabled or by the user
          * termination in test mode, makes not differnece at this point.
          * */
-        log_message(LOG_EMERG, "CLIENT HEARTBEAT TIMEOUT OCCURRED, SYSTEM RESET PENDING!");
+        log_message(LOG_EMERG, "SYSTEM RESET PENDING!");
         fflush(stdout);
         fflush(stderr);
         close(timer_fd);
