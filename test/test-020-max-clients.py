@@ -33,13 +33,12 @@ import sys
 broker = TestBroker()
 broker.start()
 
-heartbeat_ms = 30000
 clients = []
 ids = set()
 
 # Register MAX_CLIENTS clients
 for i in range(MAX_CLIENTS):
-    clientID = register(f"client{i}", timeout_ms=heartbeat_ms, expect="OK")
+    clientID = register(f"client{i}", expect="OK")
     if clientID in ids:
         fail(f"Duplicate clientID detected: {clientID}")
     ids.add(clientID)
@@ -50,7 +49,7 @@ log_step("All clientIDs are unique.")
 # Register another client (65th), this should fail
 log_info(f"Attempting to register a {MAX_CLIENTS + 1}th client — must fail")
 # register will abort if it doesn't get the error
-register("overflow", timeout_ms=heartbeat_ms, expect="ERROR")
+register("overflow", expect="ERROR")
 
 # Unregister a client in the middle
 idx = MAX_CLIENTS // 2
@@ -60,7 +59,7 @@ clients.pop(idx)
 
 # Register a new client after one has unregistered
 log_info("Registering new client after one was unregistered")
-clientID = register("replacement", timeout_ms=heartbeat_ms, expect="OK")
+clientID = register("replacement", expect="OK")
 if clientID in ids:
     fail(f"Duplicate clientID detected: {clientID}")
 log_step("New client received a new ID")

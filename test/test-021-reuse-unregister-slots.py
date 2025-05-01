@@ -34,7 +34,7 @@ broker.start()
 
 for i in range(MAX_CLIENTS * 2):
     label = f"register/unregister cycle {i+1}"
-    clientID = register("leaktest", 10000)
+    clientID = register("leaktest", timeout_ms=DEFAULT_TIMEOUT*2)
     check_cmd(label, f"UNREGISTER {clientID}\n", expect="OK")
 
 broker.stop()

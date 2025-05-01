@@ -51,7 +51,7 @@ valid_cases = [
 ]
 
 for label, cmdfmt in valid_cases:
-    cid = register("valid-client", 10000)
+    cid = register("valid-client", timeout_ms=DEFAULT_TIMEOUT*2)
     actual_cmd = cmdfmt.format(cid.upper() if "uppercase" in label else cid)
     valid(label, actual_cmd)
 
@@ -60,7 +60,7 @@ for label, cmdfmt in valid_cases:
 invalid("unregister twice", f"UNREGISTER {cid}")
 
 # Invalid cases
-clientID = register("invalid-client", 10000)
+clientID = register("invalid-client", timeout_ms=DEFAULT_TIMEOUT*2)
 bad_ids = derive_invalid_ids(clientID)
 
 for label, test_id in bad_ids.items():

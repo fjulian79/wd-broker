@@ -93,7 +93,7 @@ broker = TestBroker()
 if not broker.start(expect="OK"):
     fail("Broker should have started successfully after removing stale socket")
 
-clientID = register("testclient", 3000)
+clientID = register("testclient")
 for i in range(5):
     time.sleep(0.2)
     check_cmd(f"PING {clientID}", f"PING {clientID}\n", expect="OK")

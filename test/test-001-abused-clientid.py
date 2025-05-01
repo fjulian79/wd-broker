@@ -43,7 +43,7 @@ def second_process_func(client_id):
 broker = TestBroker()
 broker.start()
 
-clientID = register("testclient", 3000)
+clientID = register("testclient")
 
 # Start secondary process that also sends PINGs
 second_process = multiprocessing.Process(target=second_process_func, args=(clientID,))

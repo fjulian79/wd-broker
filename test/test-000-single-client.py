@@ -33,7 +33,7 @@ import sys
 broker = TestBroker()
 broker.start()
 
-clientID = register("testclient", 3000)
+clientID = register("testclient")
 
 for i in range(5):
     time.sleep(1)

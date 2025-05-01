@@ -42,7 +42,7 @@ names = ["alpha", "beta", "alpha", "gamma", "delta", "beta"]
 
 # Register all clients
 for name in names:
-    clientID = register(name, 3000)
+    clientID = register(name)
     clients.append((name, clientID))
 
 # Send heartbeat (PING) from all clients

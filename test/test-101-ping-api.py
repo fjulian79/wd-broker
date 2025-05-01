@@ -39,7 +39,7 @@ def invalid(label, cmd):
     check_cmd(label, cmd, expect="ERROR")
 
 # Setup: register a valid client
-clientID = register("pingtest", 10000)
+clientID = register("pingtest", timeout_ms=DEFAULT_TIMEOUT*2)
 
 #derive invalid clientIDs
 bad_ids = derive_invalid_ids(clientID)

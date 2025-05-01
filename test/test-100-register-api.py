@@ -32,7 +32,7 @@ import re
 broker = TestBroker()
 broker.start()
 
-default_timeout = 3000
+default_timeout = DEFAULT_TIMEOUT
 
 def valid(label, cmd):
     reply = check_cmd(label, cmd, expect="OK")
