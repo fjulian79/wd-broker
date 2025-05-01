@@ -449,14 +449,14 @@ int parse_syslog_facility(const char *str) {
 int main(int argc, char *argv[]) {
     client_t           clients[MAX_CLIENTS] = {0};
     int                watchdog_fd = -1;
-    bool               watchdog_enabled = false;
+    bool               watchdog_enabled = true;
     bool               all_ok = true;
     int                server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_un addr = {0};
     struct stat        st;
-    struct sockaddr_un addr = {.sun_family = AF_UNIX};
     int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     struct itimerspec  timer_spec = {0};
-    const char        *service_user = "wd-broker";
+    const char        *service_user = SERVICE_USER_DEFAULT;
     int                facility = LOG_DAEMON;
     int                hwwd_timeout = 0;
     bool               started_as_root = geteuid() == 0 ? true : false;
