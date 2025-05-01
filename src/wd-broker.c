@@ -105,6 +105,21 @@ void print_help(const char *progname) {
     printf("  --version          Show version information\n");
 }
 
+void fatal_errno(const char *context) {
+    fprintf(stderr, "Error, %s failed: %s\n", context, strerror(errno));
+    exit(EXIT_FAILURE);
+}
+
+void fatal_error(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    fprintf(stderr, "Error, ");
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+    exit(EXIT_FAILURE);
+}
+
 void log_message(int priority, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -263,6 +278,7 @@ uint32_t ms_since(struct timespec *then) {
 }
 
 void signal_handler(int sig) {
+    log_message(LOG_INFO, "Received signal %d, shutting down...", sig);
     running = false;
 }
 
@@ -278,7 +294,7 @@ void handle_command(int client_sock, client_t *clients) {
         .tv_usec = SOCKET_READ_TIMEOUT_MS * 100,
     };
 
-    /* Mandatory to avoid blocking in read when the a cleint does not send any inputs */
+    /* Mandatory to avoid blocking in read when the a client does not send any inputs */
     setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout));
 
     if (getsockopt(client_sock, SOL_SOCKET, SO_PEERCRED, &creds, &socklen) == -1) {
@@ -401,8 +417,7 @@ void feed_watchdog(int watchdog_fd) {
     if (watchdog_fd != -1) {
         int ret = write(watchdog_fd, "\0", 1);
         if (ret != 1) {
-            log_message(LOG_ERR, "Failed to feed watchdog: %s", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_error("Failed to feed watchdog: %s", strerror(errno));
         }
     }
 }
@@ -434,8 +449,7 @@ int parse_syslog_facility(const char *str) {
         return LOG_LOCAL7;
     }
 
-    fprintf(stderr, "ERROR: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
-    exit(EXIT_FAILURE);
+    fatal_error("Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -490,9 +504,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (loop_interval_ms < LOOP_INTERVAL_MIN_MS || loop_interval_ms > LOOP_INTERVAL_MAX_MS) {
-        printf("Error: Loop interval must be between %d and %d ms\n", LOOP_INTERVAL_MIN_MS,
+        fatal_error("Loop interval must be between %d and %d ms\n", LOOP_INTERVAL_MIN_MS,
                LOOP_INTERVAL_MAX_MS);
-        return EXIT_FAILURE;
     }
 
     hwwd_timeout = (loop_interval_ms + 500) / 1000;
@@ -509,34 +522,33 @@ int main(int argc, char *argv[]) {
     if (!test_mode) {
 
         if (geteuid() != 0) {
-            fprintf(stderr, "Error: wd-broker must be started as root!\n");
-            exit(EXIT_FAILURE);
+            fatal_error("wd-broker must be started as root!\n");
         }
 
         watchdog_fd = open("/dev/watchdog", O_WRONLY);
         if (watchdog_fd == -1) {
-            fprintf(stderr, "ERROR: Failed to open /dev/watchdog: %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_error("Failed to open /dev/watchdog: %s\n", strerror(errno));
         }
         if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &hwwd_timeout) == -1) {
-            fprintf(stderr, "ERROR: Failed to set watchdog timeout: %s\n", strerror(errno));
-            close(watchdog_fd);
-            exit(EXIT_FAILURE);
+            fatal_error("Failed to set watchdog timeout: %s\n", strerror(errno));
         }
         watchdog_enabled = true;
 
         struct passwd *pw = getpwnam(service_user);
         if (!pw) {
-            fprintf(stderr, "Error: Unknown user: %s\n", service_user);
-            exit(EXIT_FAILURE);
+            fatal_error("Unknown user: %s\n", service_user);
         }
         if (pw->pw_uid == 0) {
-            fprintf(stderr, "Error: Refusing to drop privileges to root!\n");
-            exit(EXIT_FAILURE);
+            fatal_error("Refusing to drop privileges to root!\n");
         }
-        if (setgroups(0, NULL) == -1 || setgid(pw->pw_gid) == -1 || setuid(pw->pw_uid) == -1) {
-            perror("Error: Failed to drop privileges");
-            exit(EXIT_FAILURE);
+        if (setgroups(0, NULL) == -1) {
+            fatal_errno("setgroups");
+        }
+        if (setgid(pw->pw_gid) == -1) {
+            fatal_errno("setgid");
+        }
+        if (setuid(pw->pw_uid) == -1) {
+            fatal_errno("setuid");
         }
 
         openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
@@ -545,19 +557,17 @@ int main(int argc, char *argv[]) {
 
         pid_t pid = fork();
         if (pid < 0) {
-            log_message(LOG_CRIT, "fork: %s", strerror(errno));
-            return EXIT_FAILURE;
+            fatal_errno("fork");
         }
         if (pid > 0) {
+            printf("Daemon started with PID: %d\n", pid);
             return EXIT_SUCCESS;
         }
         if (setsid() == -1) {
-            log_message(LOG_CRIT, "setsid: %s", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_errno("setsid");  
         }
         if (chdir("/") != 0) {
-            log_message(LOG_CRIT, "chdir: %s", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_errno("chdir");
         }
         umask(0);
         fclose(stdin);
@@ -575,14 +585,12 @@ int main(int argc, char *argv[]) {
 
     if (lstat(socket_path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
-            log_message(LOG_CRIT, "'%s' exists but is not a socket", socket_path);
-            exit(EXIT_FAILURE);
+            fatal_error("'%s' exists but is not a socket\n", socket_path);
         }
 
         int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (probe_fd < 0) {
-            log_message(LOG_CRIT, "socket: %s", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_errno("socket");
         }
 
         struct sockaddr_un addr = {0};
@@ -590,15 +598,12 @@ int main(int argc, char *argv[]) {
         strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
 
         if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            log_message(LOG_CRIT, "Active broker detected at '%s'", socket_path);
             close(probe_fd);
-            exit(EXIT_FAILURE);
+            fatal_error("Active broker detected at '%s'", socket_path);
         }
-
         if (errno != ECONNREFUSED) {
-            log_message(LOG_CRIT, "connect: %s", strerror(errno));
             close(probe_fd);
-            exit(EXIT_FAILURE);
+            fatal_errno("connect");
         }
 
         close(probe_fd);
@@ -606,8 +611,7 @@ int main(int argc, char *argv[]) {
         if (unlink(socket_path) == 0) {
             log_message(LOG_INFO, "Removed stale socket at '%s'", socket_path);
         } else {
-            log_message(LOG_CRIT, "unlink: %s", strerror(errno));
-            exit(EXIT_FAILURE);
+            fatal_errno("unlink");
         }
     }
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
@@ -641,8 +645,7 @@ int main(int argc, char *argv[]) {
                 uint64_t expirations;
                 ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
                 if (size != sizeof(expirations)) {
-                    log_message(LOG_CRIT, "read timerfd: %s", strerror(errno));
-                    exit(EXIT_FAILURE);
+                    fatal_error("read timerfd: %s", strerror(errno));
                 }
 
                 for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
