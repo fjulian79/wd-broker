@@ -50,32 +50,31 @@
 
 #include "config.h" // for PACKAGE_VERSION
 
-#define STR_HELPER(x)            #x
-#define STR(x)                   STR_HELPER(x)
-#define SOCKET_PATH_DEFAULT      "/run/wd-broker.sock"
-#define SOCKET_PATH_TEST         "/tmp/wd-broker-test.sock"
-#define SERVICE_USER_DEFAULT     "wd-broker"
-#define SOCKET_READ_TIMEOUT_MS   200
-#define MAX_CLIENTS              64
-#define BUF_SIZE                 128
-#define LOOP_INTERVAL_DEFAULT_MS 10000
-#define LOOP_INTERVAL_MIN_MS     LOOP_INTERVAL_DEFAULT_MS
-#define LOOP_INTERVAL_MAX_MS     60000
-#define CLIENT_NAME_LEN          64
-#define CLIENT_NAME_FMT_LEN_STR  "63" // cant use (CLIENT_NAME_LEN - 1) here
-#define REGISTER_SCANF_FORMAT    "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
-#define CLIENTID_LEN             17 // 16 hex digits + null terminator
-#define CLIENTID_FMT_LEN_NUM     16 // Must be a number cant use CLIENTID_LEN - 1
-#define CLIENTID_FMT_LEN_STR     STR(CLIENTID_FMT_LEN_NUM)
-#define CLIENTID_SCANF_FORMAT    "%" CLIENTID_FMT_LEN_STR "s %15s"
-#define CLIENT_TIMEOUT_MIN_MS    LOOP_INTERVAL_MIN_MS
-#define CLIENT_TIMEOUT_MAX_MS    LOOP_INTERVAL_MAX_MS
-#define CMD_REGISTER             "REGISTER "
-#define CMD_PING                 "PING "
-#define CMD_UNREGISTER           "UNREGISTER "
-#define CLIENT_IDENTIFIED        0
-#define CLIENT_PID_MISMATCH      -1
-#define CLIENT_NOT_FOUND         -2
+#define STR_HELPER(x)           #x
+#define STR(x)                  STR_HELPER(x)
+#define SOCKET_PATH_DEFAULT     "/run/wd-broker.sock"
+#define SERVICE_USER_DEFAULT    "wd-broker"
+#define SOCKET_READ_TIMEOUT_MS  200
+#define MAX_CLIENTS             64
+#define BUF_SIZE                128
+#define WD_TIMEOUT_DEFAULT_S    10
+#define WD_TIMEOUT_MIN_S        WD_TIMEOUT_DEFAULT_S
+#define WD_TIMEOUT_MAX_S        60
+#define CLIENT_NAME_LEN         64
+#define CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
+#define REGISTER_SCANF_FORMAT   "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
+#define CLIENTID_LEN            17 // 16 hex digits + null terminator
+#define CLIENTID_FMT_LEN_NUM    16 // Must be a number cant use CLIENTID_LEN - 1
+#define CLIENTID_FMT_LEN_STR    STR(CLIENTID_FMT_LEN_NUM)
+#define CLIENTID_SCANF_FORMAT   "%" CLIENTID_FMT_LEN_STR "s %15s"
+#define CLIENT_TIMEOUT_MIN_MS   (5 * 1000)
+#define CLIENT_TIMEOUT_MAX_MS   (300 * 1000)
+#define CMD_REGISTER            "REGISTER "
+#define CMD_PING                "PING "
+#define CMD_UNREGISTER          "UNREGISTER "
+#define CLIENT_IDENTIFIED       0
+#define CLIENT_PID_MISMATCH     -1
+#define CLIENT_NOT_FOUND        -2
 
 typedef struct {
     char            clientID[CLIENTID_LEN];
@@ -87,7 +86,7 @@ typedef struct {
     bool            checkPID;
 } client_t;
 
-uint32_t      loop_interval_ms = LOOP_INTERVAL_DEFAULT_MS;
+int           wd_timeout_s = WD_TIMEOUT_DEFAULT_S;
 char         *socket_path = SOCKET_PATH_DEFAULT;
 volatile bool running = true;
 bool          daemonize = false;
@@ -98,8 +97,8 @@ void print_help(const char *progname) {
     printf("  --help                    Show this help message\n");
     printf("  --version                 Show version information\n");
     printf("  --daemonize               Run as a daemon (default: false)\n");
-    printf("  --wd-timeout <ms>         Set hardware watchdog timeout (default: %d sec.)\n",
-           loop_interval_ms);
+    printf("  --wd-timeout <s>          Set hardware watchdog timeout (default: %d sec.)\n",
+           wd_timeout_s);
     printf("  --socket-path <path>      Set socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
     printf("  --service-user <user>     Set the service user (default: %s)\n",
            SERVICE_USER_DEFAULT);
@@ -458,7 +457,6 @@ int main(int argc, char *argv[]) {
     struct itimerspec  timer_spec = {0};
     const char        *service_user = SERVICE_USER_DEFAULT;
     int                facility = LOG_DAEMON;
-    int                hwwd_timeout = 0;
     bool               started_as_root = geteuid() == 0 ? true : false;
 
     static struct option long_options[] = {
@@ -492,7 +490,7 @@ int main(int argc, char *argv[]) {
                 facility = parse_syslog_facility(optarg);
                 break;
             case 't':
-                hwwd_timeout = atoi(optarg);
+                wd_timeout_s = atoi(optarg);
                 break;
             case 'u':
                 service_user = optarg;
@@ -506,21 +504,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (loop_interval_ms < LOOP_INTERVAL_MIN_MS || loop_interval_ms > LOOP_INTERVAL_MAX_MS) {
-        fatal_error("Loop interval must be between %d and %d ms\n", LOOP_INTERVAL_MIN_MS,
-                    LOOP_INTERVAL_MAX_MS);
+    if (wd_timeout_s < WD_TIMEOUT_MIN_S || wd_timeout_s > WD_TIMEOUT_MAX_S) {
+        fatal_error("Hardware watchdog timeout must be between %d and %d seconds\n",
+                    WD_TIMEOUT_MIN_S, WD_TIMEOUT_MAX_S);
     }
 
-    hwwd_timeout = (loop_interval_ms + 500) / 1000;
-
     /* We want to tick one second faster then the hardware watchdog to have a safety margin
-     * for scheduling jitter and high CPU loads. the minimum value of loop_interval_ms is
+     * for scheduling jitter and high CPU loads. The minimum value of wd_timeout_s is
      * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
-    loop_interval_ms -= 1000;
-    timer_spec.it_interval.tv_sec = loop_interval_ms / 1000;
-    timer_spec.it_interval.tv_nsec = (loop_interval_ms % 1000) * 1000000;
+    timer_spec.it_interval.tv_sec = wd_timeout_s - 1;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
-    timer_spec.it_value.tv_nsec = timer_spec.it_interval.tv_nsec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
         fatal_errno("timerfd_settime");
     }
@@ -589,7 +582,7 @@ int main(int argc, char *argv[]) {
         if (watchdog_fd == -1) {
             fatal_error("Failed to open /dev/watchdog: %s\n", strerror(errno));
         }
-        if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &hwwd_timeout) == -1) {
+        if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &wd_timeout_s) == -1) {
             fatal_error("Failed to set watchdog timeout: %s\n", strerror(errno));
         }
     }
@@ -629,14 +622,14 @@ int main(int argc, char *argv[]) {
     }
 
     log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION, socket_path);
-    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", hwwd_timeout);
+    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", wd_timeout_s);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
     while (running && all_ok) {
         int            maxfd = (server_sock > timer_fd ? server_sock : timer_fd) + 1;
-        struct timeval timeout = {.tv_sec = 0, .tv_usec = 500000};
+        struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
         int            ret = 0;
         fd_set         fds;
 
