@@ -125,6 +125,8 @@ void log_message(int priority, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
 
+    /* If we are running as a daemon, use syslog to log messages, otherwise use
+     * stdout to have the logs in the console. */
     if (!daemonize) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -194,6 +196,7 @@ void make_clientID(char *clientID_out) {
     uint8_t           raw[CLIENTID_LEN - 1];
     bool              have_raw = false;
 
+    /* Try to read random bytes from /dev/urandom */
     int fd = open("/dev/urandom", O_RDONLY);
     if (fd >= 0) {
         ssize_t n = read(fd, raw, sizeof(raw));
@@ -204,6 +207,7 @@ void make_clientID(char *clientID_out) {
         }
     }
 
+    /* If /dev/urandom is not available, use random() to generate a pseudo-random clientID */
     if (!have_raw) {
         struct timeval tv;
         gettimeofday(&tv, NULL);
@@ -215,6 +219,7 @@ void make_clientID(char *clientID_out) {
         }
     }
 
+    /* Convert the raw bytes to a hex string */
     for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
         clientID_out[i] = hex[raw[i] & 0x0F];
     }
@@ -258,6 +263,9 @@ int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, c
         if (clients[i].active &&
             strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
             *client = &clients[i];
+            /* Check if the clientID is registered with a PID the checkPID flag is here for 
+             * future use to allow clients to turn of the pid check. But this should be be 
+             * allowed only when they register to avoid abuse. */
             if (clients[i].checkPID == false || clients[i].pid == pid) {
                 return CLIENT_IDENTIFIED;
             } else {
@@ -441,6 +449,8 @@ int parse_syslog_facility(const char *str) {
         return LOG_LOCAL7;
     }
 
+    /* Can't user fatal_error(...) here because the compiler complains about having a
+     * no return statement in a non-void function */
     fprintf(stderr, "Error: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
     exit(EXIT_FAILURE);
 }
@@ -526,6 +536,7 @@ int main(int argc, char *argv[]) {
         fatal_error("Refusing to drop privileges to root!\n");
     }
 
+    /* Do not trust the given socket path, check if it is a socket and remove it if it is */
     if (lstat(socket_path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
             fatal_error("'%s' exists but is not a socket\n", socket_path);
@@ -557,6 +568,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* socket path is fine, create it */
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
@@ -566,6 +578,8 @@ int main(int argc, char *argv[]) {
     if (listen(server_sock, 5) == -1) {
         fatal_errno("listen");
     }
+
+    /* Set socket permissions to the service user and group */
     if (chmod(socket_path, 0660) == -1) {
         fatal_errno("chmod");
     }
@@ -573,6 +587,12 @@ int main(int argc, char *argv[]) {
         fatal_errno("chown");
     }
 
+    /* Opening the watchdog device is not mandatory, but if it is enabled, we need to
+     * open it as root. We also need to set the timeout here, because the watchdog
+     * driver does not support setting the timeout after opening the device. 
+     * We want to do this as late as pissible avoiding to open the device
+     * in case there is anything wring with the given user parameters or the client 
+     * socket. */
     if (watchdog_enabled) {
         if (!started_as_root) {
             fatal_error("wd-broker must be started as root!\n");
@@ -587,6 +607,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Drop privileges to the service user if we started as root */
     if (started_as_root) {
         if (setgroups(0, NULL) == -1) {
             fatal_errno("setgroups");
@@ -638,6 +659,11 @@ int main(int argc, char *argv[]) {
         FD_SET(timer_fd, &fds);
         ret = select(maxfd, &fds, NULL, NULL, &timeout);
         if (ret >= 0) {
+            /* If there is a select() timeout, a event on the timerfd or a new connection 
+             * on the server socket we also want to check the clients to detect timeouts 
+             * as early as possible */
+
+             /* first process a client input to do not delay a heartbeat */
             if (FD_ISSET(server_sock, &fds)) {
                 int client_sock = accept(server_sock, NULL, NULL);
                 if (client_sock >= 0) {
@@ -646,10 +672,11 @@ int main(int argc, char *argv[]) {
                 } else if (!(errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNABORTED ||
                              errno == EINTR)) {
                     log_message(LOG_ERR, "accept: %s", strerror(errno));
-                    all_ok = false; // oder exit(EXIT_FAILURE) bei sehr ernsten Fehlern
+                    all_ok = false;
                 }
             }
 
+            /* Check if any client has missed a heartbeat */
             for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
                 if (clients[i].active) {
                     uint32_t age = ms_since(&clients[i].last_ping);
@@ -665,6 +692,7 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            /* Finally feed the watchdog if it's time and everything is ok */
             if (FD_ISSET(timer_fd, &fds)) {
                 uint64_t expirations;
                 ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
