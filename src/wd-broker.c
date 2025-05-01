@@ -415,15 +415,6 @@ void handle_command(int client_sock, client_t *clients) {
     }
 }
 
-void feed_watchdog(int watchdog_fd) {
-    if (watchdog_fd != -1) {
-        int ret = write(watchdog_fd, "\0", 1);
-        if (ret != 1) {
-            fatal_error("Failed to feed watchdog: %s", strerror(errno));
-        }
-    }
-}
-
 int parse_syslog_facility(const char *str) {
     if (str == NULL) {
         return LOG_DAEMON;
@@ -686,8 +677,10 @@ int main(int argc, char *argv[]) {
                         }
                     }
                 }
-                if (all_ok) {
-                    feed_watchdog(watchdog_fd);
+                if (all_ok && watchdog_fd != -1) {
+                    if (write(watchdog_fd, "\0", 1) != 1) {
+                        fatal_error("Failed to feed watchdog: %s", strerror(errno));
+                    }
                 }
             }
         } else if (ret < 0 && errno != EINTR) {
