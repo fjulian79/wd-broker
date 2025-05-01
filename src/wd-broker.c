@@ -674,7 +674,7 @@ int main(int argc, char *argv[]) {
                         }
                     }
                 }
-                if (watchdog_enabled && all_ok) {
+                if (all_ok) {
                     feed_watchdog(watchdog_fd);
                 }
             }
@@ -699,22 +699,19 @@ int main(int argc, char *argv[]) {
 
     log_message(LOG_INFO, "Exiting wd-broker...");
 
-    if (watchdog_enabled) {
-        feed_watchdog(watchdog_fd);
-        if (watchdog_fd != -1) {
-            /* Legacy way */
-            const char c = 'V';
-            if (write(watchdog_fd, &c, 1) != 1) {
-                log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
-            }
-            /* Modern way */
-            int flags = WDIOS_DISABLECARD;
-            if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
-                log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
-            }
-            close(watchdog_fd);
-            watchdog_fd = -1;
+    if (watchdog_fd != -1) {
+        /* Legacy way */
+        const char c = 'V';
+        if (write(watchdog_fd, &c, 1) != 1) {
+            log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
         }
+        /* Modern way */
+        int flags = WDIOS_DISABLECARD;
+        if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
+            log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
+        }
+        close(watchdog_fd);
+        watchdog_fd = -1;
     }
 
     closelog();
