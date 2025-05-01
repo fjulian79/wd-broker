@@ -1,4 +1,4 @@
-AC_INIT([wd-broker], [0.14.0], [https://github.com/fjulian79/wd-broker/issues])
+AC_INIT([wd-broker], [0.15.0], [https://github.com/fjulian79/wd-broker/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
 AC_PROG_CC

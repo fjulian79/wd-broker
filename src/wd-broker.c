@@ -449,7 +449,8 @@ int parse_syslog_facility(const char *str) {
         return LOG_LOCAL7;
     }
 
-    fatal_error("Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
+    fprintf(stderr, "Error: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
+    exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[]) {
@@ -465,6 +466,7 @@ int main(int argc, char *argv[]) {
     const char        *service_user = "wd-broker";
     int                facility = LOG_DAEMON;
     int                hwwd_timeout = 0;
+    bool               started_as_root = geteuid() == 0 ? true : false;
 
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -492,6 +494,7 @@ int main(int argc, char *argv[]) {
                 facility = parse_syslog_facility(optarg);
                 break;
             case 't':
+                socket_path = SOCKET_PATH_TEST;
                 test_mode = true;
                 break;
             case 'v':
@@ -505,23 +508,80 @@ int main(int argc, char *argv[]) {
 
     if (loop_interval_ms < LOOP_INTERVAL_MIN_MS || loop_interval_ms > LOOP_INTERVAL_MAX_MS) {
         fatal_error("Loop interval must be between %d and %d ms\n", LOOP_INTERVAL_MIN_MS,
-               LOOP_INTERVAL_MAX_MS);
+                    LOOP_INTERVAL_MAX_MS);
     }
 
     hwwd_timeout = (loop_interval_ms + 500) / 1000;
 
-    /* We want to tick one second faster then the hardware watchdog to have a savety margin for
-     * scheduling jitter and high CPU loads. the minimum value of loop_interval_ms is
+    /* We want to tick one second faster then the hardware watchdog to have a safety margin
+     * for scheduling jitter and high CPU loads. the minimum value of loop_interval_ms is
      * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
     loop_interval_ms -= 1000;
     timer_spec.it_interval.tv_sec = loop_interval_ms / 1000;
     timer_spec.it_interval.tv_nsec = (loop_interval_ms % 1000) * 1000000;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     timer_spec.it_value.tv_nsec = timer_spec.it_interval.tv_nsec;
+    if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
+        fatal_errno("timerfd_settime");
+    }
+
+    struct passwd *pw = getpwnam(service_user);
+    if (!pw) {
+        fatal_error("Unknown user: %s\n", service_user);
+    }
+    if (pw->pw_uid == 0) {
+        fatal_error("Refusing to drop privileges to root!\n");
+    }
+
+    if (lstat(socket_path, &st) == 0) {
+        if (!S_ISSOCK(st.st_mode)) {
+            fatal_error("'%s' exists but is not a socket\n", socket_path);
+        }
+
+        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (probe_fd < 0) {
+            fatal_errno("socket");
+        }
+
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+        if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            close(probe_fd);
+            fatal_error("Active broker detected at '%s'", socket_path);
+        }
+
+        if (errno != ECONNREFUSED) {
+            close(probe_fd);
+            fatal_errno("connect");
+        }
+
+        close(probe_fd);
+
+        if (unlink(socket_path) == 0) {
+            printf("Removed stale socket at '%s'", socket_path);
+        } else {
+            fatal_errno("unlink");
+        }
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+    if (bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        fatal_errno("bind");
+    }
+    if (listen(server_sock, 5) == -1) {
+        fatal_errno("listen");
+    }
+    if (chmod(socket_path, 0660) == -1) {
+        fatal_errno("chmod");
+    }
+    if (started_as_root && chown(socket_path, pw->pw_uid, pw->pw_gid) == -1) {
+        fatal_errno("chown");
+    }
 
     if (!test_mode) {
-
-        if (geteuid() != 0) {
+        if (!started_as_root) {
             fatal_error("wd-broker must be started as root!\n");
         }
 
@@ -534,13 +594,6 @@ int main(int argc, char *argv[]) {
         }
         watchdog_enabled = true;
 
-        struct passwd *pw = getpwnam(service_user);
-        if (!pw) {
-            fatal_error("Unknown user: %s\n", service_user);
-        }
-        if (pw->pw_uid == 0) {
-            fatal_error("Refusing to drop privileges to root!\n");
-        }
         if (setgroups(0, NULL) == -1) {
             fatal_errno("setgroups");
         }
@@ -551,10 +604,6 @@ int main(int argc, char *argv[]) {
             fatal_errno("setuid");
         }
 
-        openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
-        log_message(LOG_INFO, "Starting wd-broker v%s", PACKAGE_VERSION);
-        log_message(LOG_INFO, "Configued hardware watchdog timeout: %d seconds", hwwd_timeout);
-
         pid_t pid = fork();
         if (pid < 0) {
             fatal_errno("fork");
@@ -564,7 +613,7 @@ int main(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         }
         if (setsid() == -1) {
-            fatal_errno("setsid");  
+            fatal_errno("setsid");
         }
         if (chdir("/") != 0) {
             fatal_errno("chdir");
@@ -573,54 +622,14 @@ int main(int argc, char *argv[]) {
         fclose(stdin);
         fclose(stdout);
         fclose(stderr);
-
-    } else {
-        socket_path = SOCKET_PATH_TEST;
-        log_message(LOG_INFO, "Running in test mode. /dev/watchdog will not be used.");
-        log_message(LOG_INFO, "Using socket path: %s", socket_path);
+        openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
     }
+
+    log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION, socket_path);
+    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", hwwd_timeout);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-
-    if (lstat(socket_path, &st) == 0) {
-        if (!S_ISSOCK(st.st_mode)) {
-            fatal_error("'%s' exists but is not a socket\n", socket_path);
-        }
-
-        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (probe_fd < 0) {
-            fatal_errno("socket");
-        }
-
-        struct sockaddr_un addr = {0};
-        addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
-
-        if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            close(probe_fd);
-            fatal_error("Active broker detected at '%s'", socket_path);
-        }
-        if (errno != ECONNREFUSED) {
-            close(probe_fd);
-            fatal_errno("connect");
-        }
-
-        close(probe_fd);
-
-        if (unlink(socket_path) == 0) {
-            log_message(LOG_INFO, "Removed stale socket at '%s'", socket_path);
-        } else {
-            fatal_errno("unlink");
-        }
-    }
-    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
-    bind(server_sock, (struct sockaddr *)&addr, sizeof(addr));
-    listen(server_sock, 5);
-
-    chmod(socket_path, 0660);
-
-    timerfd_settime(timer_fd, 0, &timer_spec, NULL);
 
     while (running && all_ok) {
         int            maxfd = (server_sock > timer_fd ? server_sock : timer_fd) + 1;
@@ -671,11 +680,13 @@ int main(int argc, char *argv[]) {
 
     if (!all_ok) {
         /* Have been kicked out of the main loop because of a client timeout.
-         * Close the socket and wait for external termination, ether by the
+         * Close the socket and wait for external termination, either by the
          * intentional reset if the watchdog is enabled or by the user
          * termination in test mode, makes not differnece at this point.
          * */
         log_message(LOG_EMERG, "CLIENT HEARTBEAT TIMEOUT OCCURRED, SYSTEM RESET PENDING!");
+        fflush(stdout);
+        fflush(stderr);
         close(timer_fd);
         unlink(socket_path);
         while (running) {
