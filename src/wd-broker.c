@@ -252,47 +252,6 @@ int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, c
     return CLIENT_NOT_FOUND;
 }
 
-static void check_and_unlink_socket(const char *path) {
-    struct stat st;
-    if (lstat(path, &st) == 0) {
-        if (!S_ISSOCK(st.st_mode)) {
-            log_message(LOG_CRIT, "'%s' exists but is not a socket", path);
-            exit(EXIT_FAILURE);
-        }
-
-        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (probe_fd < 0) {
-            log_message(LOG_CRIT, "socket: %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-
-        struct sockaddr_un addr = {0};
-        addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
-
-        if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            log_message(LOG_CRIT, "Active broker detected at '%s'", path);
-            close(probe_fd);
-            exit(EXIT_FAILURE);
-        }
-
-        if (errno != ECONNREFUSED) {
-            log_message(LOG_CRIT, "connect: %s", strerror(errno));
-            close(probe_fd);
-            exit(EXIT_FAILURE);
-        }
-
-        close(probe_fd);
-
-        if (unlink(path) == 0) {
-            log_message(LOG_INFO, "Removed stale socket at '%s'", path);
-        } else {
-            log_message(LOG_CRIT, "unlink: %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-    }
-}
-
 void get_now(struct timespec *ts) {
     clock_gettime(CLOCK_MONOTONIC, ts);
 }
@@ -438,20 +397,6 @@ void handle_command(int client_sock, client_t *clients) {
     }
 }
 
-int init_watchdog(int timeout) {
-    int watchdog_fd = open("/dev/watchdog", O_WRONLY);
-    if (watchdog_fd == -1) {
-        fprintf(stderr, "ERROR: Failed to open /dev/watchdog: %s\n", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &timeout) == -1) {
-        fprintf(stderr, "ERROR: Failed to set watchdog timeout: %s\n", strerror(errno));
-        close(watchdog_fd);
-        exit(EXIT_FAILURE);
-    }
-    return watchdog_fd;
-}
-
 void feed_watchdog(int watchdog_fd) {
     if (watchdog_fd != -1) {
         int ret = write(watchdog_fd, "\0", 1);
@@ -459,23 +404,6 @@ void feed_watchdog(int watchdog_fd) {
             log_message(LOG_ERR, "Failed to feed watchdog: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-    }
-}
-
-void close_watchdog(int watchdog_fd) {
-    if (watchdog_fd != -1) {
-        /* Legacy way */
-        const char c = 'V';
-        if (write(watchdog_fd, &c, 1) != 1) {
-            log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
-        }
-        /* Modern way */
-        int flags = WDIOS_DISABLECARD;
-        if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
-            log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
-        }
-        close(watchdog_fd);
-        watchdog_fd = -1;
     }
 }
 
@@ -516,6 +444,7 @@ int main(int argc, char *argv[]) {
     bool               watchdog_enabled = false;
     bool               all_ok = true;
     int                server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct stat        st;
     struct sockaddr_un addr = {.sun_family = AF_UNIX};
     int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     struct itimerspec  timer_spec = {0};
@@ -584,7 +513,16 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
-        watchdog_fd = init_watchdog(hwwd_timeout);
+        watchdog_fd = open("/dev/watchdog", O_WRONLY);
+        if (watchdog_fd == -1) {
+            fprintf(stderr, "ERROR: Failed to open /dev/watchdog: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &hwwd_timeout) == -1) {
+            fprintf(stderr, "ERROR: Failed to set watchdog timeout: %s\n", strerror(errno));
+            close(watchdog_fd);
+            exit(EXIT_FAILURE);
+        }
         watchdog_enabled = true;
 
         struct passwd *pw = getpwnam(service_user);
@@ -635,7 +573,43 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    check_and_unlink_socket(socket_path);
+    if (lstat(socket_path, &st) == 0) {
+        if (!S_ISSOCK(st.st_mode)) {
+            log_message(LOG_CRIT, "'%s' exists but is not a socket", socket_path);
+            exit(EXIT_FAILURE);
+        }
+
+        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (probe_fd < 0) {
+            log_message(LOG_CRIT, "socket: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+
+        struct sockaddr_un addr = {0};
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+
+        if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            log_message(LOG_CRIT, "Active broker detected at '%s'", socket_path);
+            close(probe_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        if (errno != ECONNREFUSED) {
+            log_message(LOG_CRIT, "connect: %s", strerror(errno));
+            close(probe_fd);
+            exit(EXIT_FAILURE);
+        }
+
+        close(probe_fd);
+
+        if (unlink(socket_path) == 0) {
+            log_message(LOG_INFO, "Removed stale socket at '%s'", socket_path);
+        } else {
+            log_message(LOG_CRIT, "unlink: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     bind(server_sock, (struct sockaddr *)&addr, sizeof(addr));
     listen(server_sock, 5);
@@ -710,7 +684,20 @@ int main(int argc, char *argv[]) {
 
     if (watchdog_enabled) {
         feed_watchdog(watchdog_fd);
-        close(watchdog_fd);
+        if (watchdog_fd != -1) {
+            /* Legacy way */
+            const char c = 'V';
+            if (write(watchdog_fd, &c, 1) != 1) {
+                log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
+            }
+            /* Modern way */
+            int flags = WDIOS_DISABLECARD;
+            if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
+                log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
+            }
+            close(watchdog_fd);
+            watchdog_fd = -1;
+        }
     }
 
     closelog();
