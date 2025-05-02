@@ -108,14 +108,14 @@ void print_help(const char *progname) {
 }
 
 void fatal_errno(const char *context) {
-    fprintf(stderr, "Error, %s failed: %s\n", context, strerror(errno));
+    fprintf(stderr, "Error: %s failed(%s)\n", context, strerror(errno));
     exit(EXIT_FAILURE);
 }
 
 void fatal_error(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "Error, ");
+    fprintf(stderr, "Error: ");
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
     va_end(args);
@@ -129,6 +129,7 @@ void log_message(int priority, const char *fmt, ...) {
     /* If we are running as a daemon, use syslog to log messages, otherwise use
      * stdout to have the logs in the console. */
     if (!daemonize) {
+        FILE *fd = (priority <= LOG_WARNING ? stdout : stderr);
         struct timeval tv;
         gettimeofday(&tv, NULL);
         struct tm tmb;
@@ -167,13 +168,10 @@ void log_message(int priority, const char *fmt, ...) {
 
         char timestr[32];
         strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", &tmb);
-        fprintf(stdout, "%s.%06ld [%s] ", timestr, (long)tv.tv_usec, prio_str);
-        vfprintf(stdout, fmt, ap);
-        fprintf(stdout, "\n");
-
-        if (priority <= LOG_WARNING) {
-            fflush(stdout);
-        }
+        fprintf(fd, "%s.%06ld [%s] ", timestr, (long)tv.tv_usec, prio_str);
+        vfprintf(fd, fmt, ap);
+        fprintf(fd, "\n");
+        fflush(fd);
     } else {
         vsyslog(priority, fmt, ap);
     }
@@ -429,7 +427,7 @@ void handle_command(int client_sock, client_t *clients) {
     } else if (strncmp(buf, CMD_STATUS, strlen(CMD_STATUS)) == 0) {
         if (creds.pid != 0 && creds.uid != 0) {
             write_str(client_sock, "ERROR no permission\n");
-            log_message(LOG_ERR, "Client with PID %d tried to list clients", (int)creds.pid);
+            log_message(LOG_WARNING, "Client with PID %d tried to list clients", (int)creds.pid);
             return;
         }
 
@@ -561,7 +559,7 @@ int main(int argc, char *argv[]) {
 
     struct passwd *pw = getpwnam(service_user);
     if (!pw) {
-        fatal_error("Unknown user: %s\n", service_user);
+        fatal_error("Service user (%s) not available.\n", service_user);
     }
     if (pw->pw_uid == 0) {
         fatal_error("Refusing to drop privileges to root!\n");
@@ -604,7 +602,15 @@ int main(int argc, char *argv[]) {
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     if (bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        fatal_errno("bind");
+        if(errno == EACCES) {
+            fprintf(stderr, "Error: Permission denied to bind to socket path '%s'\n", socket_path);
+            if (!started_as_root) {
+                fprintf(stderr, "Please run as root or use a different socket path\n");
+            }
+        } else {
+            fatal_error("Failed to bind to socket path '%s'\n", socket_path);
+        }
+        exit(EXIT_FAILURE);
     }
     if (listen(server_sock, 5) == -1) {
         fatal_errno("listen");

@@ -38,6 +38,19 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 # Run in test mode (no access to /dev/watchdog, useful for development)
 ./wd-broker --test
 ```
+You may have to add a dedicated service user and a correspunding group:
+```bash
+# First create the group
+sudo groupadd --system wd-clients
+
+# Then create a user which can't log in and has no home directory,
+# but is a member of the group created previously
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin \
+  --gid wd-clients --groups wd-clients wd-broker
+
+# You may want to add others or yourself to the new group
+sudo usermod -aG wd-clients <user>
+```
 
 ### Command-line options
 
