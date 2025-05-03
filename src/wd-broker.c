@@ -48,11 +48,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "config.h" // for PACKAGE_VERSION
+#include "config.h"
 
 #define STR_HELPER(x)           #x
 #define STR(x)                  STR_HELPER(x)
-#define SOCKET_PATH_DEFAULT     "/run/wd-broker.sock"
 #define SERVICE_USER_DEFAULT    "wd-broker"
 #define SOCKET_READ_TIMEOUT_MS  200
 #define MAX_CLIENTS             64

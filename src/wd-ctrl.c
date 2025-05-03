@@ -24,6 +24,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,12 +32,21 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#define SOCKET_PATH "/run/wd-broker.sock"
-#define BUF_SIZE    4096
+#include "config.h"
+
+#define BUF_SIZE            4096
 
 void die(const char *msg) {
     perror(msg);
     exit(EXIT_FAILURE);
+}
+
+void print_help(const char *progname) {
+    printf("Usage: %s [OPTIONS] status | unregister <clientID>\n", progname);
+    printf("\nOptions:\n");
+    printf("  --socket-path <path>  Use custom socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
+    printf("  --help                Show this help message\n");
+    printf("  --version             Show version information\n");
 }
 
 void print_table_header() {
@@ -57,31 +67,63 @@ void print_line_formatted(const char *line) {
 }
 
 int main(int argc, char *argv[]) {
-    const char        *cmd = NULL;
-    char               linebuf[128];
-    int                sock = 0;
-    struct sockaddr_un addr = {0};
-    char               buf[BUF_SIZE];
-    ssize_t            total_len = 0;
-    ssize_t            len;
-    char              *lines[128];
-    int                line_count = 0;
-    char              *saveptr = NULL;
-    char              *line = NULL;
-    int                has_client_rows = 0;
+    const char          *socket_path = SOCKET_PATH_DEFAULT;
+    const char          *cmd = NULL;
+    char                 linebuf[128];
+    int                  sock = 0;
+    struct sockaddr_un   addr = {0};
+    char                 buf[BUF_SIZE];
+    ssize_t              total_len = 0;
+    ssize_t              len;
+    char                *lines[128];
+    int                  line_count = 0;
+    char                *saveptr = NULL;
+    char                *line = NULL;
+    int                  has_client_rows = 0;
+    int                  opt;
+    static struct option long_options[] = {
+        {"help", no_argument, 0, 'h'},
+        {"version", no_argument, 0, 'v'},
+        {"socket-path", required_argument, 0, 's'},
+        {0, 0, 0, 0},
+    };
 
-    if (argc != 2 && !(argc == 3 && strcmp(argv[1], "unregister") == 0)) {
-        fprintf(stderr, "Usage: %s status | unregister <clientID>\n", argv[0]);
+    while ((opt = getopt_long(argc, argv, "hvs:", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'h':
+                print_help(argv[0]);
+                return EXIT_SUCCESS;
+            case 'v':
+                printf("wd-ctrl v%s\n", PACKAGE_VERSION);
+                return EXIT_SUCCESS;
+            case 's':
+                socket_path = optarg;
+                break;
+            default:
+                print_help(argv[0]);
+                return EXIT_FAILURE;
+        }
+    }
+
+    if (geteuid() != 0) {
+        fprintf(stderr, "Error, only root is allowed to control wd-broker.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, "Missing command.\n\n");
+        print_help(argv[0]);
         return EXIT_FAILURE;
     }
 
-    if (strcmp(argv[1], "status") == 0) {
+    if (strcmp(argv[optind], "status") == 0) {
         cmd = "STATUS\n";
-    } else if (strcmp(argv[1], "unregister") == 0 && argv[2]) {
-        snprintf(linebuf, sizeof(linebuf), "UNREGISTER %s\n", argv[2]);
+    } else if (strcmp(argv[optind], "unregister") == 0 && argv[optind + 1]) {
+        snprintf(linebuf, sizeof(linebuf), "UNREGISTER %s\n", argv[optind + 1]);
         cmd = linebuf;
     } else {
-        fprintf(stderr, "Invalid arguments.\n");
+        fprintf(stderr, "Invalid arguments.\n\n");
+        print_help(argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -91,7 +133,7 @@ int main(int argc, char *argv[]) {
     }
 
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         close(sock);
         die("connect");
@@ -123,7 +165,7 @@ int main(int argc, char *argv[]) {
             }
             print_line_formatted(lines[i]);
         } else {
-            printf("%s\n", lines[i]);
+            fprintf(stderr, "Server error: %s\n", lines[i]);
         }
     }
 
