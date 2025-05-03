@@ -129,7 +129,7 @@ void log_message(int priority, const char *fmt, ...) {
     /* If we are running as a daemon, use syslog to log messages, otherwise use
      * stdout to have the logs in the console. */
     if (!daemonize) {
-        FILE *fd = (priority <= LOG_WARNING ? stdout : stderr);
+        FILE          *fd = (priority <= LOG_WARNING ? stdout : stderr);
         struct timeval tv;
         gettimeofday(&tv, NULL);
         struct tm tmb;
@@ -602,7 +602,7 @@ int main(int argc, char *argv[]) {
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     if (bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        if(errno == EACCES) {
+        if (errno == EACCES) {
             fprintf(stderr, "Error: Permission denied to bind to socket path '%s'\n", socket_path);
             if (!started_as_root) {
                 fprintf(stderr, "Please run as root or use a different socket path\n");

@@ -48,6 +48,7 @@ void print_line_formatted(const char *line) {
     char     id[32], name[64];
     int      pid;
     unsigned timeout;
+
     if (sscanf(line, "%16s %d %63s %u", id, &pid, name, &timeout) == 4) {
         printf("%-18s %-6d %-20s %-12u\n", id, pid, name, timeout);
     } else {
@@ -56,13 +57,23 @@ void print_line_formatted(const char *line) {
 }
 
 int main(int argc, char *argv[]) {
+    const char        *cmd = NULL;
+    char               linebuf[128];
+    int                sock = 0;
+    struct sockaddr_un addr = {0};
+    char               buf[BUF_SIZE];
+    ssize_t            total_len = 0;
+    ssize_t            len;
+    char              *lines[128];
+    int                line_count = 0;
+    char              *saveptr = NULL;
+    char              *line = NULL;
+    int                has_client_rows = 0;
+
     if (argc != 2 && !(argc == 3 && strcmp(argv[1], "unregister") == 0)) {
         fprintf(stderr, "Usage: %s status | unregister <clientID>\n", argv[0]);
         return EXIT_FAILURE;
     }
-
-    const char *cmd = NULL;
-    char        linebuf[128];
 
     if (strcmp(argv[1], "status") == 0) {
         cmd = "STATUS\n";
@@ -74,14 +85,13 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    int sock = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sock < 0)
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) {
         die("socket");
+    }
 
-    struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
-
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         close(sock);
         die("connect");
@@ -92,26 +102,18 @@ int main(int argc, char *argv[]) {
         die("write");
     }
 
-    char    buf[BUF_SIZE];
-    ssize_t total_len = 0;
-    ssize_t len;
     while ((len = read(sock, buf + total_len, sizeof(buf) - 1 - total_len)) > 0) {
         total_len += len;
     }
     buf[total_len] = '\0';
     close(sock);
 
-    char *lines[128];
-    int   line_count = 0;
-
-    char *saveptr = NULL;
-    char *line = strtok_r(buf, "\n", &saveptr);
+    line = strtok_r(buf, "\n", &saveptr);
     while (line && line_count < 128) {
         lines[line_count++] = line;
         line = strtok_r(NULL, "\n", &saveptr);
     }
 
-    int has_client_rows = 0;
     for (int i = 0; i < line_count; ++i) {
         char id_check[17] = {0};
         if (sscanf(lines[i], "%16[0-9a-f]", id_check) == 1 && strlen(id_check) == 16) {
