@@ -101,18 +101,32 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
     FD_ZERO(&fds);
     FD_SET(sock, &fds);
     tv.tv_sec = 1;
-    ret = select(sock + 1, &fds, NULL, NULL, &tv);
-    if (ret == -1) {
-        fprintf(stderr, "Error: select() failed: %s\n", strerror(errno));
-        close(sock);
-        return -1;
-    } else if (ret == 0) {
-        fprintf(stderr, "Timeout while waiting for response from server\n");
-        close(sock);
-        return -1;
-    }
+    tv.tv_usec = 0;
+    while (total < (ssize_t)(bufsize - 1)) {
+        ret = select(sock + 1, &fds, NULL, NULL, &tv);
+        if (ret == -1) {
+            fprintf(stderr, "Error: select() failed: %s\n", strerror(errno));
+            close(sock);
+            return -1;
+        } else if (ret == 0) {
+            fprintf(stderr, "Timeout while waiting for response from server\n");
+            close(sock);
+            return -1;
+        }
 
-    while ((len = read(sock, buf + total, bufsize - 1 - total)) > 0) {
+        len = read(sock, buf + total, bufsize - 1 - total);
+        if (len < 0) {
+            if (errno == EINTR){
+                continue;
+            }
+            fprintf(stderr, "Connection error while receiving response: %s\n", strerror(errno));
+            close(sock);
+            return -1;
+        } else if (len == 0) {
+            // EOF
+            break;
+        }
+
         total += len;
     }
 
