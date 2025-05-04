@@ -29,14 +29,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/select.h>
 #include <unistd.h>
 
 #include "config.h"
 
-#define BUF_SIZE 4096
+#define BUF_SIZE  4096
+#define MAX_LINES MAX_CLIENTS + 10
+
+#define arraysize(x) (sizeof(x) / sizeof((x)[0]))
 
 void die(const char *msg) {
     perror(msg);
@@ -69,12 +72,12 @@ void print_line_formatted(const char *line) {
 }
 
 int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t bufsize) {
-    int                  sock = 0;
-    struct sockaddr_un   addr = {0};
-    fd_set         fds;
-    struct timeval tv = {0};
-    int            ret = 0;
-    ssize_t        len, total = 0;
+    int                sock = 0;
+    struct sockaddr_un addr = {0};
+    fd_set             fds;
+    struct timeval     tv = {0};
+    int                ret = 0;
+    ssize_t            len, total = 0;
 
     sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
@@ -121,9 +124,9 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
 int main(int argc, char *argv[]) {
     const char          *socket_path = SOCKET_PATH_DEFAULT;
     char                 cmd[128] = {0};
-    char                 buf[BUF_SIZE];
+    char                 buf[BUF_SIZE] = {0};
     ssize_t              len = 0;
-    char                *lines[128];
+    char                *lines[MAX_LINES] = {0};
     int                  line_count = 0;
     char                *saveptr = NULL;
     char                *line = NULL;
@@ -171,7 +174,7 @@ int main(int argc, char *argv[]) {
     }
 
     line = strtok_r(buf, "\n", &saveptr);
-    while (line && line_count < 128) {
+    while (line && line_count < arraysize(lines) - 1) {
         lines[line_count++] = line;
         line = strtok_r(NULL, "\n", &saveptr);
     }
