@@ -34,17 +34,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "common.h"
 #include "config.h"
 
 #define BUF_SIZE  4096
 #define MAX_LINES MAX_CLIENTS + 10
 
 #define arraysize(x) (sizeof(x) / sizeof((x)[0]))
-
-void die(const char *msg) {
-    perror(msg);
-    exit(EXIT_FAILURE);
-}
 
 void print_help(const char *progname) {
     printf("Usage: %s [OPTIONS] status | unregister <clientID|name>\n", progname);
@@ -81,22 +77,25 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
 
     sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
-        die("socket");
+        fprintf(stderr, "Error: socket() failed: %s\n", strerror(errno));
+        return -1;
     }
 
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        fprintf(stderr, "Cannot connect to server at %s: %s\n", socket_path, strerror(errno));
         close(sock);
-        die("connect");
+        return -1;
     }
 
     if (write(sock, cmd, strlen(cmd)) < 0) {
         if (errno == EPIPE) {
             fprintf(stderr, "Error: Broken pipe (server may have closed connection)\n");
         }
-        perror("write");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Failed to send request to server: %s\n", strerror(errno));
+        close(sock);
+        return -1;
     }
 
     FD_ZERO(&fds);
@@ -104,9 +103,12 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
     tv.tv_sec = 1;
     ret = select(sock + 1, &fds, NULL, NULL, &tv);
     if (ret == -1) {
-        perror("select");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Error: select() failed: %s\n", strerror(errno));
+        close(sock);
+        return -1;
     } else if (ret == 0) {
+        fprintf(stderr, "Timeout while waiting for response from server\n");
+        close(sock);
         return -1;
     }
 
@@ -117,15 +119,15 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
     close(sock);
     if (total >= 0) {
         buf[total] = '\0';
+        return (int)total;
     }
-    return (int)total;
+    return -1;
 }
 
 int main(int argc, char *argv[]) {
     const char          *socket_path = SOCKET_PATH_DEFAULT;
     char                 cmd[128] = {0};
     char                 buf[BUF_SIZE] = {0};
-    ssize_t              len = 0;
     char                *lines[MAX_LINES] = {0};
     int                  line_count = 0;
     char                *saveptr = NULL;
@@ -157,19 +159,17 @@ int main(int argc, char *argv[]) {
     }
 
     if (geteuid() != 0) {
-        fprintf(stderr, "Error, only root is allowed to control wd-broker.\n");
+        fatal_error("Only root is allowed to control wd-broker.\n");
         exit(EXIT_FAILURE);
     }
 
     if (optind >= argc) {
-        fprintf(stderr, "Missing command.\n\n");
+        fprintf(stderr, "Error: Missing command.\n\n");
         print_help(argv[0]);
         return EXIT_FAILURE;
     }
 
-    len = send_and_receive(socket_path, "STATUS", buf, sizeof(buf));
-    if (len <= 0) {
-        fprintf(stderr, "Error: No response from server.\n");
+    if (send_and_receive(socket_path, CMD_STATUS, buf, sizeof(buf)) <= 0) {
         return EXIT_FAILURE;
     }
 
@@ -218,17 +218,13 @@ int main(int argc, char *argv[]) {
         }
 
         if (match_count > 1) {
-            fprintf(stderr, "Error: client name '%s' is not unique.\n", client);
-            return EXIT_FAILURE;
+            fatal_error("Client name '%s' is not unique, use the clientID.\n", client);
         } else if (!found) {
-            fprintf(stderr, "Error: no client with ID or name '%s' found.\n", client);
-            return EXIT_FAILURE;
+            fatal_error("Unknown client (%s).\n", client);
         }
-        printf("%s\n", id_candidate);
-        snprintf(cmd, sizeof(cmd), "UNREGISTER %s\n", id_candidate);
-        len = send_and_receive(socket_path, cmd, buf, sizeof(buf));
-        if (len <= 0) {
-            fprintf(stderr, "Error: No response from server.\n");
+
+        snprintf(cmd, sizeof(cmd), "%s%s\n", CMD_UNREGISTER, id_candidate);
+        if (send_and_receive(socket_path, cmd, buf, sizeof(buf)) <= 0) {
             return EXIT_FAILURE;
         }
         if (strncmp(buf, "OK", 2) == 0) {
@@ -238,14 +234,13 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Server Error: %s\n", error_msg);
             return EXIT_FAILURE;
         } else {
-            fprintf(stderr, "Unexpected server response: %s\n", buf);
-            return EXIT_FAILURE;
+            fatal_error("Unexpected server response.\n");
         }
     } else {
-        fprintf(stderr, "Invalid arguments.\n\n");
+        fprintf(stderr, "Error: Invalid arguments.\n\n");
         print_help(argv[0]);
         return EXIT_FAILURE;
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

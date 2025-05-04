@@ -48,6 +48,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "common.h"
 #include "config.h"
 
 #define STR_HELPER(x)           #x
@@ -69,12 +70,6 @@
 #define CLIENT_IDENTIFIED       0
 #define CLIENT_PID_MISMATCH     -1
 #define CLIENT_NOT_FOUND        -2
-
-#define SOCKET_PROT_VERSION "0.1"
-#define CMD_REGISTER        "REGISTER "
-#define CMD_PING            "PING "
-#define CMD_UNREGISTER      "UNREGISTER "
-#define CMD_STATUS          "STATUS"
 
 typedef struct {
     char            clientID[CLIENTID_LEN];
@@ -104,21 +99,6 @@ void print_help(const char *progname) {
            SERVICE_USER_DEFAULT);
     printf("  --syslog-facility         Set syslog facility (default: LOG_DAEMON)\n");
     printf("  --no-watchdog             Do not use the hardware watchdog (default: false)\n");
-}
-
-void fatal_errno(const char *context) {
-    fprintf(stderr, "Error: %s failed(%s)\n", context, strerror(errno));
-    exit(EXIT_FAILURE);
-}
-
-void fatal_error(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    fprintf(stderr, "Error: ");
-    vfprintf(stderr, fmt, args);
-    fprintf(stderr, "\n");
-    va_end(args);
-    exit(EXIT_FAILURE);
 }
 
 void log_message(int priority, const char *fmt, ...) {
