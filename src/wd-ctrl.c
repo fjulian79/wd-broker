@@ -181,15 +181,17 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(argv[optind], "status") == 0) {
         for (int i = 0; i < line_count; ++i) {
-            char id_check[17] = {0};
-            if (sscanf(lines[i], "%16[0-9a-f]", id_check) == 1 && strlen(id_check) == 16) {
+            if (strchr(lines[i], '=') != NULL) {
+                char key[64], val[64];
+                if (sscanf(lines[i], "%63[^=]=%63s", key, val) == 2) {
+                    printf("%-18s: %s\n", key, val);
+                }
+            } else {
                 if (!has_client_rows) {
                     print_table_header();
                     has_client_rows = 1;
                 }
                 print_line_formatted(lines[i]);
-            } else {
-                fprintf(stderr, "Server error: %s\n", lines[i]);
             }
         }
     } else if (strcmp(argv[optind], "unregister") == 0 && argv[optind + 1]) {

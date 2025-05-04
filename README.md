@@ -29,7 +29,7 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 ## Usage
 
-### Start the broker
+## Start the broker
 
 ```bash
 # Run in production mode (will open /dev/watchdog)
@@ -81,9 +81,24 @@ sudo usermod -aG wd-clients <user>
 - `--no-watchdog`:  
   Disables the hardware watchdog logic. The broker runs in simulation/test mode.
 
----
+## wd-ctrl: Minimal Command-Line Tool
 
-### Protocol
+The `wd-ctrl` tool is a helper utility provided with this project to simplify manual interaction with the broker:
+
+### Usage:
+```bash
+sudo ./wd-ctrl status
+sudo ./wd-ctrl unregister <clientID | name>
+```
+
+### Options:
+- `--socket-path <path>`: Override socket path
+- `--help`: Show help text
+- `--version`: Show version of the tool
+
+The `status` command outputs broker and client information in a readable format. The `unregister` command removes a client by ID or (if unambiguous) by name. Only root is allowed to use the tool.
+
+## Protocol
 
 Clients communicate with the broker via a Unix domain socket (default: `/run/wd-broker.sock`).
 The protocol is simple and line-based. Each connection handles exactly **one command**, and is then closed by the broker.
@@ -137,21 +152,25 @@ UNREGISTER a4b7c8e912d0fc13
 Returns system-level information and all active clients.
 
 - Only allowed if the calling process is root.
-- Response includes watchdog timeout, number of registered clients, and a list of known clients:
-  `<clientID> <pid> <name> <timeout_ms>`
+- Response includes multiple lines in the following format:
+  - `daemon_version=<version>`
+  - `protocol_version=<version>`
+  - `wd_timeout_s=<timeout>`
+  - `active_clients=<count>`
+  - One line per active client: `<clientID> <pid> <name> <timeout_ms>`
 
 Example:
 ```
 STATUS
-→ Watchdog timeout: 10 seconds
-→ Clients registered: 2
+→ daemon_version=0.28.0
+→ protocol_version=0.1
+→ wd_timeout_s=10
+→ active_clients=2
 → 4f3c0d9e8a1b4f21 1234 watchdogd 10000
 → 1a2b3c4d5e6f7g89 4321 sensorX 30000
 ```
 
----
-
-### Notes and Limitations
+## Notes and Limitations
 
 - Each client is uniquely identified by both its `clientID` and its process ID (`pid`).
 - Heartbeat failures result in the broker logging a critical error and exiting to trigger a system reset.
@@ -161,7 +180,6 @@ STATUS
 - Clients must re-register after a broker restart.
 - The `LIST` command is diagnostic only and not intended for runtime monitoring by applications.
 
-
 ## Testing
 
 `wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
@@ -170,4 +188,3 @@ STATUS
 
 This project is licensed under the terms of the **GNU General Public License v3.0**.\
 See the [LICENSE](LICENSE) file for details.
-
