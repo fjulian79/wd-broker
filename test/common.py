@@ -22,6 +22,7 @@
 #
 # Please feel free to open issues or contribute improvements.
 
+from constants import *
 import atexit
 import os
 import pty
@@ -32,12 +33,8 @@ import tempfile
 import threading
 import time
 
-MAX_CLIENTS = 64
-DEFAULT_TIMEOUT = 10000
-CLIENT_TIMEOUT_MIN_MS = 5*1000
-CLIENT_TIMEOUT_MAX_MS = 300*1000
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
-
+DEFAULT_TIMEOUT = CLIENT_TIMEOUT_MIN_MS * 2
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TEST_BINARY = os.path.join(SCRIPT_DIR, "wd-broker")
 

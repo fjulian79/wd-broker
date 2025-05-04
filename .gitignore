@@ -17,6 +17,7 @@ wd-broker*
 wd-ctrl
 src/.dirstamp
 src/.deps/
+constants.py
 
 # Autotools generated files
 Makefile
