@@ -52,9 +52,7 @@
 
 #define STR_HELPER(x)           #x
 #define STR(x)                  STR_HELPER(x)
-#define SERVICE_USER_DEFAULT    "wd-broker"
 #define SOCKET_READ_TIMEOUT_MS  200
-#define MAX_CLIENTS             64
 #define BUF_SIZE                128
 #define WD_TIMEOUT_DEFAULT_S    10
 #define WD_TIMEOUT_MIN_S        WD_TIMEOUT_DEFAULT_S
