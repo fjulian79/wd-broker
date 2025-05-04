@@ -33,7 +33,7 @@
 #include "common.h"
 
 void fatal_errno(const char *context) {
-    fprintf(stderr, "Error: %s failed(%s)\n", context, strerror(errno));
+    fprintf(stderr, "Error: %s (%s)\n", context, strerror(errno));
     exit(EXIT_FAILURE);
 }
 

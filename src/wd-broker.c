@@ -525,7 +525,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (wd_timeout_s < WD_TIMEOUT_MIN_S || wd_timeout_s > WD_TIMEOUT_MAX_S) {
-        fatal_error("Hardware watchdog timeout must be between %d and %d seconds\n",
+        fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
                     WD_TIMEOUT_MIN_S, WD_TIMEOUT_MAX_S);
     }
 
@@ -535,38 +535,39 @@ int main(int argc, char *argv[]) {
     timer_spec.it_interval.tv_sec = wd_timeout_s - 1;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
-        fatal_errno("timerfd_settime");
+        fatal_errno("timerfd_settime failed");
     }
 
     struct passwd *pw = getpwnam(service_user);
     if (!pw) {
-        fatal_error("Service user (%s) not available.\n", service_user);
+        fatal_error("Service user '%s' does not exist.\n", service_user);
     }
     if (pw->pw_uid == 0) {
-        fatal_error("Refusing to drop privileges to root!\n");
+        fatal_error("Refusing to drop privileges to root, use a different service user.\n");
     }
 
     /* Do not trust the given socket path, check if it is a socket and remove it if it is */
     if (lstat(socket_path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
-            fatal_error("'%s' exists but is not a socket\n", socket_path);
+            fatal_error("Cannot use '%s'. File exists but is not a socket.\n"
+                "Hint: Remove the file or choose a different path.", socket_path);
         }
 
         int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (probe_fd < 0) {
-            fatal_errno("socket");
+            fatal_errno("Could not create socket to test for active broker");
         }
 
         addr.sun_family = AF_UNIX;
         strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
         if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
             close(probe_fd);
-            fatal_error("Active broker detected at '%s'", socket_path);
+            fatal_error("Active wd-broker instance detected at '%s'.\n", socket_path);
         }
 
         if (errno != ECONNREFUSED) {
             close(probe_fd);
-            fatal_errno("connect");
+            fatal_errno("Unexpected error when probing existing socket");
         }
 
         close(probe_fd);
@@ -574,7 +575,7 @@ int main(int argc, char *argv[]) {
         if (unlink(socket_path) == 0) {
             printf("Removed stale socket at '%s'\n", socket_path);
         } else {
-            fatal_errno("unlink");
+            fatal_errno("Could not remove stale socket file");
         }
     }
 
@@ -594,15 +595,15 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     if (listen(server_sock, 5) == -1) {
-        fatal_errno("listen");
+        fatal_errno("Could not listen on the server socket");
     }
 
     /* Set socket permissions to the service user and group */
     if (chmod(socket_path, 0660) == -1) {
-        fatal_errno("chmod");
+        fatal_errno("Could not set permissions on socket file");
     }
     if (started_as_root && chown(socket_path, pw->pw_uid, pw->pw_gid) == -1) {
-        fatal_errno("chown");
+        fatal_errno("Could not set permissions on socket file");
     }
 
     /* Opening the watchdog device is not mandatory, but if it is enabled, we need to
@@ -628,30 +629,30 @@ int main(int argc, char *argv[]) {
     /* Drop privileges to the service user if we started as root */
     if (started_as_root) {
         if (setgroups(0, NULL) == -1) {
-            fatal_errno("setgroups");
+            fatal_errno("Failed to drop supplementary groups");
         }
         if (setgid(pw->pw_gid) == -1) {
-            fatal_errno("setgid");
+            fatal_errno("Failed to drop group privileges");
         }
         if (setuid(pw->pw_uid) == -1) {
-            fatal_errno("setuid");
+            fatal_errno("Failed to drop user privileges");
         }
     }
 
     if (daemonize) {
         pid_t pid = fork();
         if (pid < 0) {
-            fatal_errno("fork");
+            fatal_errno("Could not create daemon process");
         }
         if (pid > 0) {
             printf("Daemon started with PID: %d\n", pid);
             return EXIT_SUCCESS;
         }
         if (setsid() == -1) {
-            fatal_errno("setsid");
+            fatal_errno("Could not detach from terminal");
         }
         if (chdir("/") != 0) {
-            fatal_errno("chdir");
+            fatal_errno("Could not change working directory to '/'");
         }
         umask(0);
         fclose(stdin);
@@ -715,7 +716,7 @@ int main(int argc, char *argv[]) {
                 uint64_t expirations;
                 ssize_t  size = read(timer_fd, &expirations, sizeof(expirations));
                 if (size != sizeof(expirations)) {
-                    fatal_error("read timerfd: %s", strerror(errno));
+                    fatal_errno("Failed to read timer file descriptor");
                 }
 
                 if (all_ok && watchdog_fd != -1) {
