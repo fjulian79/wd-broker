@@ -25,16 +25,18 @@
 #include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 #include "config.h"
 
-#define BUF_SIZE            4096
+#define BUF_SIZE 4096
 
 void die(const char *msg) {
     perror(msg);
@@ -42,7 +44,7 @@ void die(const char *msg) {
 }
 
 void print_help(const char *progname) {
-    printf("Usage: %s [OPTIONS] status | unregister <clientID>\n", progname);
+    printf("Usage: %s [OPTIONS] status | unregister <clientID|name>\n", progname);
     printf("\nOptions:\n");
     printf("  --socket-path <path>  Use custom socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
     printf("  --help                Show this help message\n");
@@ -66,21 +68,67 @@ void print_line_formatted(const char *line) {
     }
 }
 
-int main(int argc, char *argv[]) {
-    const char          *socket_path = SOCKET_PATH_DEFAULT;
-    const char          *cmd = NULL;
-    char                 linebuf[128];
+int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t bufsize) {
     int                  sock = 0;
     struct sockaddr_un   addr = {0};
+    fd_set         fds;
+    struct timeval tv = {0};
+    int            ret = 0;
+    ssize_t        len, total = 0;
+
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) {
+        die("socket");
+    }
+
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        close(sock);
+        die("connect");
+    }
+
+    if (write(sock, cmd, strlen(cmd)) < 0) {
+        if (errno == EPIPE) {
+            fprintf(stderr, "Error: Broken pipe (server may have closed connection)\n");
+        }
+        perror("write");
+        exit(EXIT_FAILURE);
+    }
+
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
+    tv.tv_sec = 1;
+    ret = select(sock + 1, &fds, NULL, NULL, &tv);
+    if (ret == -1) {
+        perror("select");
+        exit(EXIT_FAILURE);
+    } else if (ret == 0) {
+        return -1;
+    }
+
+    while ((len = read(sock, buf + total, bufsize - 1 - total)) > 0) {
+        total += len;
+    }
+
+    close(sock);
+    if (total >= 0) {
+        buf[total] = '\0';
+    }
+    return (int)total;
+}
+
+int main(int argc, char *argv[]) {
+    const char          *socket_path = SOCKET_PATH_DEFAULT;
+    char                 cmd[128] = {0};
     char                 buf[BUF_SIZE];
-    ssize_t              total_len = 0;
-    ssize_t              len;
+    ssize_t              len = 0;
     char                *lines[128];
     int                  line_count = 0;
     char                *saveptr = NULL;
     char                *line = NULL;
     int                  has_client_rows = 0;
-    int                  opt;
+    int                  opt = 0;
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
         {"version", no_argument, 0, 'v'},
@@ -116,39 +164,11 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    if (strcmp(argv[optind], "status") == 0) {
-        cmd = "STATUS\n";
-    } else if (strcmp(argv[optind], "unregister") == 0 && argv[optind + 1]) {
-        snprintf(linebuf, sizeof(linebuf), "UNREGISTER %s\n", argv[optind + 1]);
-        cmd = linebuf;
-    } else {
-        fprintf(stderr, "Invalid arguments.\n\n");
-        print_help(argv[0]);
+    len = send_and_receive(socket_path, "STATUS", buf, sizeof(buf));
+    if (len <= 0) {
+        fprintf(stderr, "Error: No response from server.\n");
         return EXIT_FAILURE;
     }
-
-    sock = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sock < 0) {
-        die("socket");
-    }
-
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        close(sock);
-        die("connect");
-    }
-
-    if (write(sock, cmd, strlen(cmd)) < 0) {
-        close(sock);
-        die("write");
-    }
-
-    while ((len = read(sock, buf + total_len, sizeof(buf) - 1 - total_len)) > 0) {
-        total_len += len;
-    }
-    buf[total_len] = '\0';
-    close(sock);
 
     line = strtok_r(buf, "\n", &saveptr);
     while (line && line_count < 128) {
@@ -156,17 +176,70 @@ int main(int argc, char *argv[]) {
         line = strtok_r(NULL, "\n", &saveptr);
     }
 
-    for (int i = 0; i < line_count; ++i) {
-        char id_check[17] = {0};
-        if (sscanf(lines[i], "%16[0-9a-f]", id_check) == 1 && strlen(id_check) == 16) {
-            if (!has_client_rows) {
-                print_table_header();
-                has_client_rows = 1;
+    if (strcmp(argv[optind], "status") == 0) {
+        for (int i = 0; i < line_count; ++i) {
+            char id_check[17] = {0};
+            if (sscanf(lines[i], "%16[0-9a-f]", id_check) == 1 && strlen(id_check) == 16) {
+                if (!has_client_rows) {
+                    print_table_header();
+                    has_client_rows = 1;
+                }
+                print_line_formatted(lines[i]);
+            } else {
+                fprintf(stderr, "Server error: %s\n", lines[i]);
             }
-            print_line_formatted(lines[i]);
-        } else {
-            fprintf(stderr, "Server error: %s\n", lines[i]);
         }
+    } else if (strcmp(argv[optind], "unregister") == 0 && argv[optind + 1]) {
+        char *client = argv[optind + 1];
+        char  id_candidate[17] = {0};
+        bool  found = false;
+        int   match_count = 0;
+
+        for (int i = 0; i < line_count; ++i) {
+            char     id[17], name[64];
+            int      pid;
+            unsigned timeout;
+            if (sscanf(lines[i], "%16s %d %63s %u", id, &pid, name, &timeout) == 4) {
+                if (strcmp(client, id) == 0) {
+                    strncpy(id_candidate, id, sizeof(id_candidate));
+                    found = true;
+                    break;
+                } else if (strcmp(client, name) == 0) {
+                    strncpy(id_candidate, id, sizeof(id_candidate));
+                    match_count++;
+                    found = true;
+                }
+            }
+        }
+
+        if (match_count > 1) {
+            fprintf(stderr, "Error: client name '%s' is not unique.\n", client);
+            return EXIT_FAILURE;
+        } else if (!found) {
+            fprintf(stderr, "Error: no client with ID or name '%s' found.\n", client);
+            return EXIT_FAILURE;
+        }
+        printf("%s\n", id_candidate);
+        snprintf(cmd, sizeof(cmd), "UNREGISTER %s\n", id_candidate);
+        len = send_and_receive(socket_path, cmd, buf, sizeof(buf));
+        if (len <= 0) {
+            fprintf(stderr, "Error: No response from server.\n");
+            return EXIT_FAILURE;
+        }
+        if (strncmp(buf, "OK", 2) == 0) {
+            printf("Client '%s' unregistered successfully.\n", client);
+        } else if (strncmp(buf, "ERROR", 5) == 0) {
+            char *error_msg = buf + 6;
+            fprintf(stderr, "Server Error: %s\n", error_msg);
+            return EXIT_FAILURE;
+        } else {
+            fprintf(stderr, "Unexpected server response: %s\n", buf);
+            return EXIT_FAILURE;
+        }
+    } else {
+        fprintf(stderr, "Invalid arguments.\n\n");
+        print_help(argv[0]);
+        return EXIT_FAILURE;
     }
 
     return 0;
