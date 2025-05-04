@@ -60,7 +60,7 @@
 #define WD_TIMEOUT_MAX_S        60
 #define CLIENT_NAME_LEN         64
 #define CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
-#define REGISTER_SCANF_FORMAT   "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s"
+#define REGISTER_SCANF_FORMAT   "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s %15s"
 #define CLIENTID_LEN            17 // 16 hex digits + null terminator
 #define CLIENTID_FMT_LEN_NUM    16 // Must be a number cant use CLIENTID_LEN - 1
 #define CLIENTID_FMT_LEN_STR    STR(CLIENTID_FMT_LEN_NUM)
@@ -300,14 +300,26 @@ void handle_command(int client_sock, client_t *clients) {
     if (strncmp(buf, CMD_REGISTER, strlen(CMD_REGISTER)) == 0) {
         char name[CLIENT_NAME_LEN];
         int  tmp_timeout = 0;
-        char extra[16]; // catches unexpected extra input
+        char opt_flag[16] = {0};
+        char extra[16] = {0}; // catches unexpected extra input
         int  n = 0;
+        bool checkPID = true;
 
         /* Try to match exactly two arguments, and reject trailing garbage */
-        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, extra);
-        if (n != 2) {
+        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, opt_flag, extra);
+        if (n < 2 || n > 3) {
             write_str(client_sock, "ERROR invalid REGISTER syntax\n");
             return;
+        }
+
+        /* If 'ignorepid' is given, skip PID check for this client */
+        if (n == 3) {
+            if (strcmp(opt_flag, "ignorepid") == 0) {
+                checkPID = false;
+            } else {
+                write_str(client_sock, "ERROR invalid REGISTER syntax\n");
+                return;
+            }
         }
 
         /* Validate timeout range */
@@ -330,14 +342,15 @@ void handle_command(int client_sock, client_t *clients) {
                 clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
                 clients[i].pid = creds.pid;
-                clients[i].checkPID = true;
+                clients[i].checkPID = checkPID;
                 clients[i].timeout_ms = (uint32_t)tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
-                log_message(LOG_INFO,
-                            "Client '%s' (PID %d) registered with timeout %d ms as clientID %s)",
-                            clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
-                            clients[i].clientID);
+                log_message(
+                    LOG_INFO,
+                    "Client '%s' (PID %d) registered (timeout %d ms, pidCheck %s, clientID %s)",
+                    clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
+                    checkPID ? "enabled" : "disabled", clients[i].clientID);
                 write_str(client_sock, "OK %s\n", clients[i].clientID);
                 return;
             }
@@ -422,8 +435,8 @@ void handle_command(int client_sock, client_t *clients) {
         write_str(client_sock, "active_clients=%d\n", active_clients);
         for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active) {
-                write_str(client_sock, "%s %d %s %u\n", clients[i].clientID, (int)clients[i].pid,
-                          clients[i].name, clients[i].timeout_ms);
+                write_str(client_sock, "%s %d %s %u %d\n", clients[i].clientID, (int)clients[i].pid,
+                          clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
             }
         }
 
@@ -550,7 +563,8 @@ int main(int argc, char *argv[]) {
     if (lstat(socket_path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
             fatal_error("Cannot use '%s'. File exists but is not a socket.\n"
-                "Hint: Remove the file or choose a different path.", socket_path);
+                        "Hint: Remove the file or choose a different path.",
+                        socket_path);
         }
 
         int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);

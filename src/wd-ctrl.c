@@ -51,17 +51,18 @@ void print_help(const char *progname) {
 }
 
 void print_table_header() {
-    printf("\n%-18s %-6s %-20s %-12s\n", "Client ID", "PID", "Name", "Timeout (ms)");
-    printf("%.*s\n", 60, "------------------------------------------------------------");
+    printf("\n%-18s %-6s %-20s %-13s %-8s\n", "Client ID", "PID", "Name", "Timeout (ms)", "pidCheck");
+    printf("%.*s\n", 69, "---------------------------------------------------------------------");
 }
 
 void print_line_formatted(const char *line) {
     char     id[32], name[64];
-    int      pid;
-    unsigned timeout;
+    int      pid = 0;
+    unsigned timeout = 0;
+    int checkPid = 0;
 
-    if (sscanf(line, "%16s %d %63s %u", id, &pid, name, &timeout) == 4) {
-        printf("%-18s %-6d %-20s %-12u\n", id, pid, name, timeout);
+    if (sscanf(line, "%16s %d %63s %u %d", id, &pid, name, &timeout, &checkPid) == 5) {
+        printf("%-18s %-6d %-20s %-13u %-8s\n", id, pid, name, timeout, checkPid ? "on" : "off");
     } else {
         fputs(line, stdout); // fallback
     }
@@ -116,7 +117,7 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
 
         len = read(sock, buf + total, bufsize - 1 - total);
         if (len < 0) {
-            if (errno == EINTR){
+            if (errno == EINTR) {
                 continue;
             }
             fprintf(stderr, "Connection error while receiving response: %s\n", strerror(errno));

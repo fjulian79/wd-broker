@@ -46,21 +46,31 @@ def invalid(label, cmd):
 
 # Valid examples
 valid("valid basic",           f"REGISTER client123 {default_timeout}")
+valid("with ignorepid",          f"REGISTER client123 {default_timeout} ignorepid")
 valid("valid with dash",       f"REGISTER client-42 {default_timeout}")
 valid("valid with underscore", f"REGISTER client_abc {default_timeout}")
 valid("extra whitespace",      f"REGISTER   client123   {default_timeout}")
 valid("with newline",          f"REGISTER client123 {default_timeout}\n")
+valid("with ignorepid + lws",  f"REGISTER client123 {default_timeout}   ignorepid")
+valid("with ignorepid + tws",  f"REGISTER client123 {default_timeout} ignorepid   ")
+valid("with ignorepid + nl",   f"REGISTER client123 {default_timeout} ignorepid\n")
 
 # Invalid syntax
 invalid("missing timeout",     f"REGISTER client123")
-
-invalid("timeout first",       f"REGISTER 3000 client123")
+invalid("bane with blank",     f"REGISTER client 123 {default_timeout}")
+invalid("timeout first",       f"REGISTER {default_timeout} client123")
 invalid("only keyword",        f"REGISTER")
 invalid("timeout as text",     f"REGISTER client123 three_thousand")
-invalid("too many args",       f"REGISTER client123 3000 extra")
-invalid("missing name",        f"REGISTER 3000")
+invalid("too many args",       f"REGISTER client123 {default_timeout} ignorepid extra")
+invalid("missing name",        f"REGISTER {default_timeout}")
+invalid("ignorepid upper",     f"REGISTER client123 {default_timeout} IGNOREPID")
+invalid("duplicate ignorepid", f"REGISTER client123 {default_timeout} ignorepid ignorepid")
+invalid("name with tab",       f"REGISTER client\tname {default_timeout}")
+invalid("name with newline",   f"REGISTER client\nname {default_timeout}")
 
 # Edge values
+invalid("timeout below min",   f"REGISTER client123 {CLIENT_TIMEOUT_MIN_MS - 1}")
+invalid("timeout above max",   f"REGISTER client123 {CLIENT_TIMEOUT_MAX_MS + 1}")
 invalid("timeout zero",        f"REGISTER client123 0")
 invalid("timeout negative",    f"REGISTER client123 -1")
 invalid("timeout huge",        f"REGISTER client123 999999999999")

@@ -7,25 +7,25 @@ import signal
 import sys
 
 SOCKET_PATH = "/run/wd-broker.sock"
-CLIENT_COUNT = 5
 PING_INTERVAL = 1.0  # Sekunden
 TIMEOUT_MS = 5000
 
 clients = []
 stop_event = threading.Event()
 
-
 class ClientThread(threading.Thread):
-    def __init__(self, name):
+    def __init__(self, name, ignorepid=False):
         super().__init__()
         self.name = name
+        self.ignorepid = ignorepid
         self.client_id = None
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
     def run(self):
         try:
             self.sock.connect(SOCKET_PATH)
-            self.sock.sendall(f"REGISTER {self.name} {TIMEOUT_MS}\n".encode())
+            ignore_flag = "ignorepid" if self.ignorepid else ""
+            self.sock.sendall(f"REGISTER {self.name} {TIMEOUT_MS} {ignore_flag}\n".encode())
             response = self.sock.recv(1024).decode().strip()
             if not response.startswith("OK "):
                 print(f"[{self.name}] Failed to register: {response}")
@@ -57,18 +57,25 @@ class ClientThread(threading.Thread):
         except Exception as e:
             print(f"[{self.name}] Failed to unregister: {e}")
 
-
 def signal_handler(sig, frame):
     print("\nStopping clients...")
     stop_event.set()
 
-
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
-    for i in range(CLIENT_COUNT):
-        name = f"client{i+1}"
-        t = ClientThread(name)
+    # Definition mit ignorepid pro Client
+    client_definitions = [
+        ("alpha", False),
+        ("beta", False),
+        ("gamma", False),
+        ("delta", True),
+        ("alpha", False),
+    ]
+
+    clients = []
+    for name, ignorepid in client_definitions:
+        t = ClientThread(name, ignorepid)
         clients.append(t)
         t.start()
 

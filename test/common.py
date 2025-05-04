@@ -34,6 +34,8 @@ import time
 
 MAX_CLIENTS = 64
 DEFAULT_TIMEOUT = 10000
+CLIENT_TIMEOUT_MIN_MS = 5*1000
+CLIENT_TIMEOUT_MAX_MS = 300*1000
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -190,8 +192,11 @@ def derive_invalid_ids(valid_id):
         "invalid id":    f"{int(valid_id, 16) ^ 0x1:0{id_len}x}",
     }
 
-def register(name, timeout_ms=DEFAULT_TIMEOUT, expect="OK"):
-    reply = check_cmd(f"REGISTER '{name}'", f"REGISTER {name} {timeout_ms}\n", expect=expect)
+def register(name, timeout_ms=DEFAULT_TIMEOUT, expect="OK", ignorepid=False):
+    cmd = f"REGISTER {name} {timeout_ms}"
+    if ignorepid:
+        cmd += " ignorepid"
+    reply = check_cmd(f"REGISTER '{name}'", cmd + "\n", expect=expect)
     if expect == "OK":
         clientID = reply.split()[1]
         return clientID

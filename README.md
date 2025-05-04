@@ -15,6 +15,7 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 - Restricts access to the used Unix domain socket to authorized users or groups (access control)
 - Works with C binaries, Python scripts, shell tools, or whatever can use a Unix domain socket
 - Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
+- Optional per-client disabling of PID checks via `REGISTER ... ignorepid`
 
 ## Security
 
@@ -110,11 +111,12 @@ The protocol is simple and line-based. Each connection handles exactly **one com
 - Up to 64 clients can be registered concurrently.
 - Commands are processed synchronously per connection.
 
-#### REGISTER `<name>` `<timeout_ms>`
+#### REGISTER `<name>` `<timeout_ms>` `[ignorepid]`
 Registers a new client.
 
 - `name`: Printable ASCII string, max 63 characters, no spaces.
 - `timeout_ms`: Integer between 5000 and 300000 (5s to 5min).
+- Optional third argument `ignorepid` disables PID checking for this client.
 - Response: `OK <clientID>` or `ERROR <reason>`
 - `clientID` is a unique 16-character lowercase hex string assigned by the broker.
 
@@ -122,12 +124,15 @@ Example:
 ```
 REGISTER sensorA 15000
 → OK a4b7c8e912d0fc13
+
+REGISTER testtool 10000 ignorepid
+→ OK 7c6b7f3e91ab8d24
 ```
 
 #### PING `<clientID>`
 Renews the client's heartbeat.
 
-- The client's PID must match the PID stored during registration.
+- The client's PID must match the PID stored during registration unless `ignorepid` was used.
 - Response: `OK`, `ERROR wrong PID`, `ERROR unknown clientID`, or syntax-related error.
 
 Example:
@@ -139,7 +144,7 @@ PING a4b7c8e912d0fc13
 #### UNREGISTER `<clientID>`
 Removes a client from the active list.
 
-- PID validation is enforced.
+- PID validation is enforced unless `ignorepid` was used.
 - Response: `OK` or `ERROR <reason>`
 
 Example:
@@ -157,7 +162,7 @@ Returns system-level information and all active clients.
   - `protocol_version=<version>`
   - `wd_timeout_s=<timeout>`
   - `active_clients=<count>`
-  - One line per active client: `<clientID> <pid> <name> <timeout_ms>`
+  - One line per active client: `<clientID> <pid> <name> <timeout_ms> <pidCheck>`
 
 Example:
 ```
@@ -166,13 +171,13 @@ STATUS
 → protocol_version=0.1
 → wd_timeout_s=10
 → active_clients=2
-→ 4f3c0d9e8a1b4f21 1234 watchdogd 10000
-→ 1a2b3c4d5e6f7g89 4321 sensorX 30000
+→ 4f3c0d9e8a1b4f21 1234 watchdogd 10000 0
+→ 1a2b3c4d5e6f7g89 4321 sensorX 30000 1
 ```
 
 ## Notes and Limitations
 
-- Each client is uniquely identified by both its `clientID` and its process ID (`pid`).
+- Each client is uniquely identified by both its `clientID` and its process ID (`pid`) unless `ignorepid` was used.
 - Heartbeat failures result in the broker logging a critical error and exiting to trigger a system reset.
 - The broker does not support authentication; security relies on the Unix socket permissions and PID matching.
 - Socket reuse is checked on startup. If a previous instance left a stale socket, it is removed unless a running broker is detected.

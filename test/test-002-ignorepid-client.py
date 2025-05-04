@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 #
-# test-001-abused-clientid.py – Basic single-client muliprocessing test.
+# test-002-ignorepid-client.py – Basic single-client muliprocessing test.
 #
-# This test registers a single client and sends periodic heartbeats (PINGs)
-# within the allowed timeout window. Additionally, it spawns a second process
-# that also sends PINGs using the same client ID. The purpose of this test is 
-# to verify whether a client ID can be used from a different process than the 
-# one that registered it. The expectation is that this should not work.
+# This test registers a single client with the option 'ignorepid' and spawns a 
+# second process that sends PINGs using the same client ID. The purpose of this 
+# test is to verify whether a client ID can be used from a different process than 
+# the one that registered it. The expectation is that this should work.
 #
 # Copyright (C) 2025 Julian Friedrich
 #
@@ -36,23 +35,18 @@ import multiprocessing
 def second_process_func(client_id):
     for _ in range(5):
         time.sleep(1)
-        check_cmd(f"PING {client_id}", f"PING {client_id}\n", expect="ERROR")
+        check_cmd(f"PING {client_id}", f"PING {client_id}\n", expect="OK")
 
-    unregister(clientID, expect="ERROR")
+    unregister(clientID, expect="OK")
 
 broker = TestBroker()
 broker.start()
 
-clientID = register("testclient")
+clientID = register("testclient", ignorepid=True)
 
 # Start secondary process that also sends PINGs
 second_process = multiprocessing.Process(target=second_process_func, args=(clientID,))
 second_process.start()
 
-for i in range(5):
-    time.sleep(1)
-    check_cmd(f"PING {clientID}", f"PING {clientID}\n", expect="OK")
-
 second_process.join()
-unregister(clientID)
 broker.stop()
