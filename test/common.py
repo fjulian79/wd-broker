@@ -206,19 +206,22 @@ def unregister(clientID, name=None, expect="OK"):
         label = f"UNREGISTER {clientID}"
     check_cmd(label, f"UNREGISTER {clientID}\n", expect=expect)
 
+def send_socket_command(cmd, socket_path, timeout_s=30):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout_s)
+        sock.connect(socket_path)
+        sock.sendall(cmd.encode())
+        return sock.recv(1024).decode().strip()
+
 def check_cmd(label, cmd, expect=None, timeout_s=30, shall_fail=False):
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout_s)
-            sock.connect(SOCKET_PATH)
-            sock.sendall(cmd.encode())
-            reply = sock.recv(128).decode().strip()
-            status = reply.split()[0] if reply else ""
-            if expect and status != expect:
-                fail(f"{label}: expected '{expect}', got: '{status}' (full reply: '{reply}')")
+        reply = send_socket_command(cmd, SOCKET_PATH, timeout_s)
+        status = reply.split()[0] if reply else ""
+        if expect and status != expect:
+            fail(f"{label}: expected '{expect}', got: '{status}' (full reply: '{reply}')")
 
-            log_step(f"{label}: got expected response '{reply}'")
-            return reply
+        log_step(f"{label}: got expected response '{reply}'")
+        return reply
 
     except (FileNotFoundError, ConnectionRefusedError, socket.timeout) as e:
         if shall_fail:

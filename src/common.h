@@ -27,11 +27,12 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define SOCKET_PROT_VERSION "0.1"
+#define SOCKET_PROT_VERSION "0.2"
 #define CMD_REGISTER        "REGISTER "
 #define CMD_PING            "PING "
 #define CMD_UNREGISTER      "UNREGISTER "
 #define CMD_STATUS          "STATUS"
+#define CMD_VERSION         "VERSION"
 
 /* Print the error context along with errno information and exit */
 void fatal_errno(const char *context);

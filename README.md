@@ -175,6 +175,15 @@ STATUS
 → 1a2b3c4d5e6f7g89 4321 sensorX 30000 1
 ```
 
+#### VERSION
+Returns the version information of the daemon and protocol.
+
+- May be called by any client (no special privileges required).
+- Response includes two lines in the following format:
+  - `daemon_version=<version>`
+  - `protocol_version=<version>`
+- No additional arguments are allowed.
+
 ## Notes and Limitations
 
 - Each client is uniquely identified by both its `clientID` and its process ID (`pid`) unless `ignorepid` was used.

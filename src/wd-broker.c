@@ -417,6 +417,12 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
     } else if (strncmp(buf, CMD_STATUS, strlen(CMD_STATUS)) == 0) {
+        char extra[32];
+        if (sscanf(buf + strlen(CMD_STATUS), " %31s", extra) == 1) {
+            write_str(client_sock, "ERROR invalid syntax\n");
+            return;
+        }
+
         if (creds.pid != 0 && creds.uid != 0) {
             write_str(client_sock, "ERROR no permission\n");
             log_message(LOG_WARNING, "Client with PID %d tried to list clients", (int)creds.pid);
@@ -439,7 +445,15 @@ void handle_command(int client_sock, client_t *clients) {
                           clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
             }
         }
-
+    } if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
+        char extra[32];
+        if (sscanf(buf + strlen(CMD_VERSION), " %31s", extra) == 1) {
+            write_str(client_sock, "ERROR invalid syntax\n");
+            return;
+        }
+    
+        write_str(client_sock, "daemon_version=%s\n", PACKAGE_VERSION);
+        write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
     } else {
         write_str(client_sock, "ERROR unknown command\n");
     }
