@@ -306,7 +306,8 @@ void handle_command(int client_sock, client_t *clients) {
         bool         checkPID = true;
 
         /* Try to match exactly two arguments, and reject trailing garbage */
-        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, opt_flag, extra);
+        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, opt_flag,
+                   extra);
         if (n < 2 || n > 3) {
             write_str(client_sock, "ERROR invalid REGISTER syntax\n");
             return;
@@ -445,13 +446,14 @@ void handle_command(int client_sock, client_t *clients) {
                           clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
             }
         }
-    } if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
+    }
+    if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
         char extra[32];
         if (sscanf(buf + strlen(CMD_VERSION), " %31s", extra) == 1) {
             write_str(client_sock, "ERROR invalid syntax\n");
             return;
         }
-    
+
         write_str(client_sock, "daemon_version=%s\n", PACKAGE_VERSION);
         write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
     } else {

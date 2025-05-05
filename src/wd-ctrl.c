@@ -51,7 +51,8 @@ void print_help(const char *progname) {
 }
 
 void print_table_header() {
-    printf("\n%-18s %-6s %-20s %-13s %-8s\n", "Client ID", "PID", "Name", "Timeout (ms)", "pidCheck");
+    printf("\n%-18s %-6s %-20s %-13s %-8s\n", "Client ID", "PID", "Name", "Timeout (ms)",
+           "pidCheck");
     printf("%.*s\n", 69, "---------------------------------------------------------------------");
 }
 
@@ -59,7 +60,7 @@ void print_line_formatted(const char *line) {
     char     id[32], name[64];
     int      pid = 0;
     unsigned timeout = 0;
-    int checkPid = 0;
+    int      checkPid = 0;
 
     if (sscanf(line, "%16s %d %63s %u %d", id, &pid, name, &timeout, &checkPid) == 5) {
         printf("%-18s %-6d %-20s %-13u %-8s\n", id, pid, name, timeout, checkPid ? "on" : "off");
