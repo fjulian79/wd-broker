@@ -46,7 +46,7 @@ def invalid(label, cmd):
 
 # Valid examples
 valid("valid basic",           f"REGISTER client123 {default_timeout}")
-valid("with ignorepid",          f"REGISTER client123 {default_timeout} ignorepid")
+valid("with ignorepid",        f"REGISTER client123 {default_timeout} ignorepid")
 valid("valid with dash",       f"REGISTER client-42 {default_timeout}")
 valid("valid with underscore", f"REGISTER client_abc {default_timeout}")
 valid("extra whitespace",      f"REGISTER   client123   {default_timeout}")
@@ -56,6 +56,10 @@ valid("with ignorepid + tws",  f"REGISTER client123 {default_timeout} ignorepid 
 valid("with ignorepid + nl",   f"REGISTER client123 {default_timeout} ignorepid\n")
 
 # Invalid syntax
+invalid("lowercase",           f"register client123 {default_timeout}")
+invalid("SentenenceCase",      f"Register client123 {default_timeout}")
+invalid("PascalCase",          f"RegIstEr client123 {default_timeout}")
+invalid("KebabCase",           f"Regi-ster client123 {default_timeout}")
 invalid("missing timeout",     f"REGISTER client123")
 invalid("bane with blank",     f"REGISTER client 123 {default_timeout}")
 invalid("timeout first",       f"REGISTER {default_timeout} client123")
