@@ -171,7 +171,7 @@ void write_str(int fd, const char *fmt, ...) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    uint8_t           raw[CLIENTID_LEN - 1];
+    size_t            raw[CLIENTID_LEN - 1];
     bool              have_raw = false;
 
     /* Try to read random bytes from /dev/urandom */
@@ -192,13 +192,13 @@ void make_clientID(char *clientID_out) {
         unsigned int seed = (unsigned int)(tv.tv_sec ^ tv.tv_usec ^ getpid() ^ getppid());
 
         srandom(seed);
-        for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+        for (size_t i = 0; i < CLIENTID_LEN - 1; ++i) {
             raw[i] = random() & 0xFF;
         }
     }
 
     /* Convert the raw bytes to a hex string */
-    for (uint8_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+    for (size_t i = 0; i < CLIENTID_LEN - 1; ++i) {
         clientID_out[i] = hex[raw[i] & 0x0F];
     }
 
@@ -237,7 +237,7 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
 }
 
 int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, client_t **client) {
-    for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
         if (clients[i].active &&
             strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
             *client = &clients[i];
@@ -337,7 +337,7 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
         /* Register the client */
-        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
             if (!clients[i].active) {
                 clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
@@ -432,14 +432,14 @@ void handle_command(int client_sock, client_t *clients) {
         write_str(client_sock, "daemon_version=%s\n", PACKAGE_VERSION);
         write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
         write_str(client_sock, "wd_timeout_s=%d\n", wd_timeout_s);
-        uint8_t active_clients = 0;
-        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+        size_t active_clients = 0;
+        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 active_clients++;
             }
         }
         write_str(client_sock, "active_clients=%d\n", active_clients);
-        for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 write_str(client_sock, "%s %d %s %u %d\n", clients[i].clientID, (int)clients[i].pid,
                           clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
@@ -724,7 +724,7 @@ int main(int argc, char *argv[]) {
             }
 
             /* Check if any client has missed a heartbeat */
-            for (uint8_t i = 0; i < MAX_CLIENTS; ++i) {
+            for (size_t i = 0; i < MAX_CLIENTS; ++i) {
                 if (clients[i].active) {
                     uint32_t age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {
