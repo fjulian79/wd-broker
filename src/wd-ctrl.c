@@ -25,6 +25,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -184,6 +185,8 @@ int main(int argc, char *argv[]) {
         print_help(argv[0]);
         return EXIT_FAILURE;
     }
+
+    signal(SIGPIPE, SIG_IGN);
 
     if (send_and_receive(socket_path, CMD_STATUS, buf, sizeof(buf)) <= 0) {
         return EXIT_FAILURE;

@@ -696,6 +696,7 @@ int main(int argc, char *argv[]) {
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGPIPE, SIG_IGN);
 
     while (running && all_ok) {
         int            maxfd = (server_sock > timer_fd ? server_sock : timer_fd) + 1;
