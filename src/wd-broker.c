@@ -75,7 +75,7 @@ typedef struct {
     char            clientID[CLIENTID_LEN];
     char            name[CLIENT_NAME_LEN];
     pid_t           pid;
-    uint32_t        timeout_ms;
+    unsigned int    timeout_ms;
     struct timespec last_ping;
     bool            active;
     bool            checkPID;
@@ -258,7 +258,7 @@ void get_now(struct timespec *ts) {
     clock_gettime(CLOCK_MONOTONIC, ts);
 }
 
-uint32_t ms_since(struct timespec *then) {
+unsigned int ms_since(struct timespec *then) {
     struct timespec now;
     get_now(&now);
     return (now.tv_sec - then->tv_sec) * 1000 + (now.tv_nsec - then->tv_nsec) / 1000000;
@@ -298,12 +298,12 @@ void handle_command(int client_sock, client_t *clients) {
     buf[len] = '\0';
 
     if (strncmp(buf, CMD_REGISTER, strlen(CMD_REGISTER)) == 0) {
-        char name[CLIENT_NAME_LEN];
-        int  tmp_timeout = 0;
-        char opt_flag[16] = {0};
-        char extra[16] = {0}; // catches unexpected extra input
-        int  n = 0;
-        bool checkPID = true;
+        char         name[CLIENT_NAME_LEN];
+        unsigned int tmp_timeout = 0;
+        char         opt_flag[16] = {0};
+        char         extra[16] = {0}; // catches unexpected extra input
+        int          n = 0;
+        bool         checkPID = true;
 
         /* Try to match exactly two arguments, and reject trailing garbage */
         n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, opt_flag, extra);
@@ -343,7 +343,7 @@ void handle_command(int client_sock, client_t *clients) {
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
                 clients[i].pid = creds.pid;
                 clients[i].checkPID = checkPID;
-                clients[i].timeout_ms = (uint32_t)tmp_timeout;
+                clients[i].timeout_ms = tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
                 log_message(
@@ -726,7 +726,7 @@ int main(int argc, char *argv[]) {
             /* Check if any client has missed a heartbeat */
             for (size_t i = 0; i < MAX_CLIENTS; ++i) {
                 if (clients[i].active) {
-                    uint32_t age = ms_since(&clients[i].last_ping);
+                    unsigned int age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {
                         log_message(LOG_CRIT,
                                     "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u "
