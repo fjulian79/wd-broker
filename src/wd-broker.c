@@ -446,8 +446,7 @@ void handle_command(int client_sock, client_t *clients) {
                           clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
             }
         }
-    }
-    if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
+    } else if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
         char extra[32];
         if (sscanf(buf + strlen(CMD_VERSION), " %31s", extra) == 1) {
             write_str(client_sock, "ERROR invalid syntax\n");
