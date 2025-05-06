@@ -8,9 +8,9 @@ from pathlib import Path
 WANTED_KEYS = {
     "PACKAGE_VERSION",
     "SOCKET_PROT_VERSION",
-    "MAX_CLIENTS",
-    "CLIENT_TIMEOUT_MIN_MS",
-    "CLIENT_TIMEOUT_MAX_MS",
+    "WD_MAX_CLIENTS",
+    "WD_CLIENT_TIMEOUT_MIN_MS",
+    "WD_CLIENT_TIMEOUT_MAX_MS",
 }
 
 # Regex für einfache #define-Zeilen

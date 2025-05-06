@@ -34,7 +34,7 @@ import threading
 import time
 
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
-DEFAULT_TIMEOUT = CLIENT_TIMEOUT_MIN_MS * 2
+DEFAULT_TIMEOUT = WD_CLIENT_TIMEOUT_MIN_MS * 2
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TEST_BINARY = os.path.join(SCRIPT_DIR, "wd-broker")
 

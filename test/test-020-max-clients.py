@@ -36,8 +36,8 @@ broker.start()
 clients = []
 ids = set()
 
-# Register MAX_CLIENTS clients
-for i in range(MAX_CLIENTS):
+# Register WD_MAX_CLIENTS clients
+for i in range(WD_MAX_CLIENTS):
     clientID = register(f"client{i}", expect="OK")
     if clientID in ids:
         fail(f"Duplicate clientID detected: {clientID}")
@@ -47,12 +47,12 @@ for i in range(MAX_CLIENTS):
 log_step("All clientIDs are unique.")
 
 # Register another client (65th), this should fail
-log_info(f"Attempting to register a {MAX_CLIENTS + 1}th client — must fail")
+log_info(f"Attempting to register a {WD_MAX_CLIENTS + 1}th client — must fail")
 # register will abort if it doesn't get the error
 register("overflow", expect="ERROR")
 
 # Unregister a client in the middle
-idx = MAX_CLIENTS // 2
+idx = WD_MAX_CLIENTS // 2
 clientName, clientID = clients[idx]
 unregister(clientID, name=clientName)
 clients.pop(idx)

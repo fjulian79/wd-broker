@@ -74,8 +74,8 @@ invalid("name with tab",       f"REGISTER client\tname {default_timeout}\n")
 invalid("name with newline",   f"REGISTER client\nname {default_timeout}\n")
 
 # Edge values
-invalid("timeout below min",   f"REGISTER client123 {CLIENT_TIMEOUT_MIN_MS - 1}\n")
-invalid("timeout above max",   f"REGISTER client123 {CLIENT_TIMEOUT_MAX_MS + 1}\n")
+invalid("timeout below min",   f"REGISTER client123 {WD_CLIENT_TIMEOUT_MIN_MS - 1}\n")
+invalid("timeout above max",   f"REGISTER client123 {WD_CLIENT_TIMEOUT_MAX_MS + 1}\n")
 invalid("timeout zero",        f"REGISTER client123 0\n")
 invalid("timeout negative",    f"REGISTER client123 -1\n")
 invalid("timeout huge",        f"REGISTER client123 999999999999\n")

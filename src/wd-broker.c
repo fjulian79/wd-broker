@@ -51,29 +51,27 @@
 #include "common.h"
 #include "config.h"
 
-#define STR_HELPER(x)           #x
-#define STR(x)                  STR_HELPER(x)
-#define SOCKET_READ_TIMEOUT_MS  200
-#define BUF_SIZE                128
-#define WD_TIMEOUT_DEFAULT_S    10
-#define WD_TIMEOUT_MIN_S        WD_TIMEOUT_DEFAULT_S
-#define WD_TIMEOUT_MAX_S        60
-#define CLIENT_NAME_LEN         64
-#define CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
-#define REGISTER_SCANF_FORMAT   "%" CLIENT_NAME_FMT_LEN_STR "s %d %15s %15s"
-#define CLIENTID_LEN            17 // 16 hex digits + null terminator
-#define CLIENTID_FMT_LEN_NUM    16 // Must be a number cant use CLIENTID_LEN - 1
-#define CLIENTID_FMT_LEN_STR    STR(CLIENTID_FMT_LEN_NUM)
-#define CLIENTID_SCANF_FORMAT   "%" CLIENTID_FMT_LEN_STR "s %15s"
-#define CLIENT_TIMEOUT_MIN_MS   (5 * 1000)
-#define CLIENT_TIMEOUT_MAX_MS   (300 * 1000)
-#define CLIENT_IDENTIFIED       0
-#define CLIENT_PID_MISMATCH     -1
-#define CLIENT_NOT_FOUND        -2
+#define STR_HELPER(x)              #x
+#define STR(x)                     STR_HELPER(x)
+#define WD_HW_TIMEOUT_DEFAULT_S    10
+#define WD_HW_TIMEOUT_MIN_S        WD_HW_TIMEOUT_DEFAULT_S
+#define WD_HW_TIMEOUT_MAX_S        60
+#define WD_CLIENT_NAME_LEN         64
+#define WD_CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
+#define WD_REGISTER_SCANF_FORMAT   "%" WD_CLIENT_NAME_FMT_LEN_STR "s %d %15s %15s"
+#define WD_CLIENTID_LEN            17 // 16 hex digits + null terminator
+#define WD_CLIENTID_FMT_LEN        16 // Must be a number cant use CLIENTID_LEN - 1
+#define WD_CLIENTID_FMT_STR        STR(WD_CLIENTID_FMT_LEN)
+#define WD_CLIENTID_SCANF_FORMAT   "%" WD_CLIENTID_FMT_STR "s %15s"
+#define WD_CLIENT_TIMEOUT_MIN_MS   (5 * 1000)
+#define WD_CLIENT_TIMEOUT_MAX_MS   (300 * 1000)
+#define WD_CLIENT_IDENTIFIED       0
+#define WD_CLIENT_PID_MISMATCH     -1
+#define WD_CLIENT_NOT_FOUND        -2
 
 typedef struct {
-    char            clientID[CLIENTID_LEN];
-    char            name[CLIENT_NAME_LEN];
+    char            clientID[WD_CLIENTID_LEN];
+    char            name[WD_CLIENT_NAME_LEN];
     pid_t           pid;
     unsigned int    timeout_ms;
     struct timespec last_ping;
@@ -81,7 +79,7 @@ typedef struct {
     bool            checkPID;
 } client_t;
 
-int           wd_timeout_s = WD_TIMEOUT_DEFAULT_S;
+int           wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
 char         *socket_path = SOCKET_PATH_DEFAULT;
 volatile bool running = true;
 bool          daemonize = false;
@@ -92,10 +90,14 @@ void print_help(const char *progname) {
     printf("  --help                    Show this help message and exit\n");
     printf("  --version                 Show version information and exit\n");
     printf("  --daemonize               Run as a daemon (default: false)\n");
-    printf("  --wd-timeout <seconds>    Set hardware watchdog timeout (default: %d seconds)\n", WD_TIMEOUT_DEFAULT_S);
-    printf("                            Must be between %d and %d seconds\n", WD_TIMEOUT_MIN_S, WD_TIMEOUT_MAX_S);
-    printf("  --socket-path <path>      Set the Unix domain socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
-    printf("  --service-user <user>     Set the service user to drop privileges to (default: %s)\n", SERVICE_USER_DEFAULT);
+    printf("  --wd-timeout <seconds>    Set hardware watchdog timeout (default: %d seconds)\n",
+           WD_HW_TIMEOUT_DEFAULT_S);
+    printf("                            Must be between %d and %d seconds\n", WD_HW_TIMEOUT_MIN_S,
+           WD_HW_TIMEOUT_MAX_S);
+    printf("  --socket-path <path>      Set the Unix domain socket path (default: %s)\n",
+           SOCKET_PATH_DEFAULT);
+    printf("  --service-user <user>     Set the service user to drop privileges to (default: %s)\n",
+           SERVICE_USER_DEFAULT);
     printf("                            ATTENTION: Must not be 'root'\n");
     printf("  --syslog-facility <name>  Set syslog facility when running as a daemon\n");
     printf("                            Supported values: LOG_DAEMON (default), LOG_USER,\n");
@@ -177,7 +179,7 @@ void write_str(int fd, const char *fmt, ...) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    size_t            raw[CLIENTID_LEN - 1];
+    size_t            raw[WD_CLIENTID_LEN - 1];
     bool              have_raw = false;
 
     /* Try to read random bytes from /dev/urandom */
@@ -198,23 +200,23 @@ void make_clientID(char *clientID_out) {
         unsigned int seed = (unsigned int)(tv.tv_sec ^ tv.tv_usec ^ getpid() ^ getppid());
 
         srandom(seed);
-        for (size_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+        for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
             raw[i] = random() & 0xFF;
         }
     }
 
     /* Convert the raw bytes to a hex string */
-    for (size_t i = 0; i < CLIENTID_LEN - 1; ++i) {
+    for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
         clientID_out[i] = hex[raw[i] & 0x0F];
     }
 
-    clientID_out[CLIENTID_LEN - 1] = '\0';
+    clientID_out[WD_CLIENTID_LEN - 1] = '\0';
 }
 
 bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out_id) {
-    char clientID_raw[CLIENTID_LEN];
+    char clientID_raw[WD_CLIENTID_LEN];
     char extra[16];
-    int  n = sscanf(buf + strlen(cmd_prefix), CLIENTID_SCANF_FORMAT, clientID_raw, extra);
+    int  n = sscanf(buf + strlen(cmd_prefix), WD_CLIENTID_SCANF_FORMAT, clientID_raw, extra);
 
     /* Try to match exactly one argument, and reject trailing garbage */
     if (n != 1) {
@@ -224,7 +226,7 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
 
     /* Check if clientID is a valid hex string */
     size_t id_len = strlen(clientID_raw);
-    if (id_len != CLIENTID_FMT_LEN_NUM) {
+    if (id_len != WD_CLIENTID_FMT_LEN) {
         write_str(sock, "ERROR invalid clientID length\n");
         return false;
     }
@@ -243,21 +245,20 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
 }
 
 int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, client_t **client) {
-    for (size_t i = 0; i < MAX_CLIENTS; ++i) {
-        if (clients[i].active &&
-            strncmp(clients[i].clientID, clientID, CLIENTID_FMT_LEN_NUM) == 0) {
+    for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
+        if (clients[i].active && strncmp(clients[i].clientID, clientID, WD_CLIENTID_FMT_LEN) == 0) {
             *client = &clients[i];
             /* Check if the clientID is registered with a PID the checkPID flag is here for
              * future use to allow clients to turn of the pid check. But this should be be
              * allowed only when they register to avoid abuse. */
             if (clients[i].checkPID == false || clients[i].pid == pid) {
-                return CLIENT_IDENTIFIED;
+                return WD_CLIENT_IDENTIFIED;
             } else {
-                return CLIENT_PID_MISMATCH;
+                return WD_CLIENT_PID_MISMATCH;
             }
         }
     }
-    return CLIENT_NOT_FOUND;
+    return WD_CLIENT_NOT_FOUND;
 }
 
 void get_now(struct timespec *ts) {
@@ -278,7 +279,7 @@ void signal_handler(int sig) {
 void handle_command(int client_sock, client_t *clients) {
     client_t    *pClient = {0};
     int32_t      ret = 0;
-    char         buf[BUF_SIZE];
+    char         buf[128] = {0};
     ssize_t      len = 0;
     struct ucred creds;
     socklen_t    socklen = sizeof(creds);
@@ -297,7 +298,7 @@ void handle_command(int client_sock, client_t *clients) {
     buf[len] = '\0';
 
     if (strncmp(buf, CMD_REGISTER, strlen(CMD_REGISTER)) == 0) {
-        char         name[CLIENT_NAME_LEN];
+        char         name[WD_CLIENT_NAME_LEN];
         unsigned int tmp_timeout = 0;
         char         opt_flag[16] = {0};
         char         extra[16] = {0}; // catches unexpected extra input
@@ -305,8 +306,8 @@ void handle_command(int client_sock, client_t *clients) {
         bool         checkPID = true;
 
         /* Try to match exactly two arguments, and reject trailing garbage */
-        n = sscanf(buf + strlen(CMD_REGISTER), REGISTER_SCANF_FORMAT, name, &tmp_timeout, opt_flag,
-                   extra);
+        n = sscanf(buf + strlen(CMD_REGISTER), WD_REGISTER_SCANF_FORMAT, name, &tmp_timeout,
+                   opt_flag, extra);
         if (n < 2 || n > 3) {
             write_str(client_sock, "ERROR invalid REGISTER syntax\n");
             return;
@@ -323,7 +324,7 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
         /* Validate timeout range */
-        if (tmp_timeout < CLIENT_TIMEOUT_MIN_MS || tmp_timeout > CLIENT_TIMEOUT_MAX_MS) {
+        if (tmp_timeout < WD_CLIENT_TIMEOUT_MIN_MS || tmp_timeout > WD_CLIENT_TIMEOUT_MAX_MS) {
             write_str(client_sock, "ERROR invalid timeout\n");
             return;
         }
@@ -337,7 +338,7 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
         /* Register the client */
-        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
+        for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (!clients[i].active) {
                 clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
@@ -360,7 +361,7 @@ void handle_command(int client_sock, client_t *clients) {
         write_str(client_sock, "ERROR too many clients\n");
 
     } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
-        char clientID[CLIENTID_LEN] = {0};
+        char clientID[WD_CLIENTID_LEN] = {0};
 
         if (!parse_clientID(buf, CMD_PING, client_sock, clientID)) {
             return;
@@ -368,11 +369,11 @@ void handle_command(int client_sock, client_t *clients) {
 
         ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
         switch (ret) {
-            case CLIENT_IDENTIFIED:
+            case WD_CLIENT_IDENTIFIED:
                 get_now(&pClient->last_ping);
                 write_str(client_sock, "OK\n");
                 return;
-            case CLIENT_PID_MISMATCH:
+            case WD_CLIENT_PID_MISMATCH:
                 write_str(client_sock, "ERROR wrong PID\n");
                 log_message(LOG_WARNING, "Client '%s', known as PID %d has sent PING from PID %d",
                             pClient->name, (int)pClient->pid, (int)creds.pid);
@@ -383,7 +384,7 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
     } else if (strncmp(buf, CMD_UNREGISTER, strlen(CMD_UNREGISTER)) == 0) {
-        char clientID[CLIENTID_LEN] = {0};
+        char clientID[WD_CLIENTID_LEN] = {0};
 
         if (!parse_clientID(buf, CMD_UNREGISTER, client_sock, clientID)) {
             return;
@@ -391,13 +392,13 @@ void handle_command(int client_sock, client_t *clients) {
 
         ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
         switch (ret) {
-            case CLIENT_IDENTIFIED:
+            case WD_CLIENT_IDENTIFIED:
                 log_message(LOG_INFO, "Client '%s' (PID %d) unregistered (clientID=%s)",
                             pClient->name, (int)pClient->pid, pClient->clientID);
                 pClient->active = false;
                 write_str(client_sock, "OK\n");
                 return;
-            case CLIENT_PID_MISMATCH:
+            case WD_CLIENT_PID_MISMATCH:
                 if (creds.uid == 0) {
                     pClient->active = false;
                     write_str(client_sock, "OK\n");
@@ -433,13 +434,13 @@ void handle_command(int client_sock, client_t *clients) {
         write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
         write_str(client_sock, "wd_timeout_s=%d\n", wd_timeout_s);
         size_t active_clients = 0;
-        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
+        for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 active_clients++;
             }
         }
         write_str(client_sock, "active_clients=%d\n", active_clients);
-        for (size_t i = 0; i < MAX_CLIENTS; ++i) {
+        for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 write_str(client_sock, "%s %d %s %u %d\n", clients[i].clientID, (int)clients[i].pid,
                           clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
@@ -493,7 +494,7 @@ int parse_syslog_facility(const char *str) {
 }
 
 int main(int argc, char *argv[]) {
-    client_t           clients[MAX_CLIENTS] = {0};
+    client_t           clients[WD_MAX_CLIENTS] = {0};
     int                watchdog_fd = -1;
     bool               watchdog_enabled = true;
     bool               all_ok = true;
@@ -551,9 +552,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (wd_timeout_s < WD_TIMEOUT_MIN_S || wd_timeout_s > WD_TIMEOUT_MAX_S) {
+    if (wd_timeout_s < WD_HW_TIMEOUT_MIN_S || wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
         fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
-                    WD_TIMEOUT_MIN_S, WD_TIMEOUT_MAX_S);
+                    WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
     }
 
     /* We want to tick one second faster then the hardware watchdog to have a safety margin
@@ -725,7 +726,7 @@ int main(int argc, char *argv[]) {
             }
 
             /* Check if any client has missed a heartbeat */
-            for (size_t i = 0; i < MAX_CLIENTS; ++i) {
+            for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
                 if (clients[i].active) {
                     unsigned int age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {

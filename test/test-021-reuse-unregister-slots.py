@@ -3,7 +3,7 @@
 # test-021-reuse-unregister-slots.py – detect resource leaks in repeated UNREGISTER cycles
 #
 # This test registers and immediately unregisters clients in a loop,
-# repeating the cycle MAX_CLIENTS * 2 times to ensure that the broker
+# repeating the cycle WD_MAX_CLIENTS * 2 times to ensure that the broker
 # releases internal resources properly. If there is a resource leak or
 # improper slot cleanup, the broker will reject registration with ERROR.
 #
@@ -32,7 +32,7 @@ from common import *
 broker = TestBroker()
 broker.start()
 
-for i in range(MAX_CLIENTS * 2):
+for i in range(WD_MAX_CLIENTS * 2):
     label = f"register/unregister cycle {i+1}"
     clientID = register("leaktest", timeout_ms=DEFAULT_TIMEOUT*2)
     check_cmd(label, f"UNREGISTER {clientID}\n", expect="OK")

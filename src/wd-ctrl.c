@@ -39,7 +39,7 @@
 #include "config.h"
 
 #define BUF_SIZE  4096
-#define MAX_LINES MAX_CLIENTS + 10
+#define MAX_LINES WD_MAX_CLIENTS + 10
 
 #define arraysize(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -107,7 +107,7 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
         return -1;
     }
 
-    len = read_with_timeout(sock, buf, bufsize, false); 
+    len = read_with_timeout(sock, buf, bufsize, false);
 
     close(sock);
     if (len >= 0) {
@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
 
     signal(SIGPIPE, SIG_IGN);
 
-    if (send_and_receive(socket_path, CMD_STATUS"\n", buf, sizeof(buf)) <= 0) {
+    if (send_and_receive(socket_path, CMD_STATUS "\n", buf, sizeof(buf)) <= 0) {
         return EXIT_FAILURE;
     }
 

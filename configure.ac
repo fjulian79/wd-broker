@@ -20,7 +20,7 @@ AC_ARG_WITH([max-clients],
     [max_clients="$withval"],
     [max_clients=64]
 )
-AC_DEFINE_UNQUOTED(MAX_CLIENTS, [$max_clients], [Maximum number of simultaneous clients])
+AC_DEFINE_UNQUOTED(WD_MAX_CLIENTS, [$max_clients], [Maximum number of simultaneous clients])
 
 AC_PROG_CC
 CFLAGS="$CFLAGS -Wall -Werror"
