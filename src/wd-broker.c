@@ -276,19 +276,12 @@ void signal_handler(int sig) {
 }
 
 void handle_command(int client_sock, client_t *clients) {
-    client_t      *pClient = {0};
-    int32_t        ret = 0;
-    char           buf[BUF_SIZE];
-    ssize_t        len = 0;
-    struct ucred   creds;
-    socklen_t      socklen = sizeof(creds);
-    struct timeval recv_timeout = {
-        .tv_sec = 0,
-        .tv_usec = SOCKET_READ_TIMEOUT_MS * 100,
-    };
-
-    /* Mandatory to avoid blocking in read when the a client does not send any inputs */
-    setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &recv_timeout, sizeof(recv_timeout));
+    client_t    *pClient = {0};
+    int32_t      ret = 0;
+    char         buf[BUF_SIZE];
+    ssize_t      len = 0;
+    struct ucred creds;
+    socklen_t    socklen = sizeof(creds);
 
     if (getsockopt(client_sock, SOL_SOCKET, SO_PEERCRED, &creds, &socklen) == -1) {
         write_str(client_sock, "ERROR reading peercred\n");
