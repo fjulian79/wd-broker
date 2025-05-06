@@ -87,18 +87,24 @@ volatile bool running = true;
 bool          daemonize = false;
 
 void print_help(const char *progname) {
-    printf("Usage: %s [--test] [--help] [--version] [--interval <ms>]\n", progname);
+    printf("Usage: %s [OPTIONS]\n", progname);
     printf("\nOptions:\n");
-    printf("  --help                    Show this help message\n");
-    printf("  --version                 Show version information\n");
+    printf("  --help                    Show this help message and exit\n");
+    printf("  --version                 Show version information and exit\n");
     printf("  --daemonize               Run as a daemon (default: false)\n");
-    printf("  --wd-timeout <s>          Set hardware watchdog timeout (default: %d sec.)\n",
-           wd_timeout_s);
-    printf("  --socket-path <path>      Set socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
-    printf("  --service-user <user>     Set the service user (default: %s)\n",
-           SERVICE_USER_DEFAULT);
-    printf("  --syslog-facility         Set syslog facility (default: LOG_DAEMON)\n");
-    printf("  --no-watchdog             Do not use the hardware watchdog (default: false)\n");
+    printf("  --wd-timeout <seconds>    Set hardware watchdog timeout (default: %d seconds)\n", WD_TIMEOUT_DEFAULT_S);
+    printf("                            Must be between %d and %d seconds\n", WD_TIMEOUT_MIN_S, WD_TIMEOUT_MAX_S);
+    printf("  --socket-path <path>      Set the Unix domain socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
+    printf("  --service-user <user>     Set the service user to drop privileges to (default: %s)\n", SERVICE_USER_DEFAULT);
+    printf("                            ATTENTION: Must not be 'root'\n");
+    printf("  --syslog-facility <name>  Set syslog facility when running as a daemon\n");
+    printf("                            Supported values: LOG_DAEMON (default), LOG_USER,\n");
+    printf("                            LOG_LOCAL0 through LOG_LOCAL7\n");
+    printf("  --no-watchdog             Disable hardware watchdog (test mode, default: false)\n");
+    printf("\nExamples:\n");
+    printf("  %s --wd-timeout 15 --socket-path /run/your-own.sock\n", progname);
+    printf("  %s --daemonize --service-user youruser\n", progname);
+    printf("\n");
 }
 
 void log_message(int priority, const char *fmt, ...) {

@@ -29,16 +29,29 @@ Any kind of contribution (issues, pull requests or just feedback) is welcome!
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
 ## Usage
-
-## Start the broker
-
 ```bash
-# Run in production mode (will open /dev/watchdog)
-./wd-broker
+$ wd-broker --help
+Usage: wd-broker [OPTIONS]
 
-# Run in test mode (no access to /dev/watchdog, useful for development)
-./wd-broker --test
+Options:
+  --help                    Show this help message and exit
+  --version                 Show version information and exit
+  --daemonize               Run as a daemon (default: false)
+  --wd-timeout <seconds>    Set hardware watchdog timeout (default: 10 seconds)
+                            Must be between 10 and 60 seconds
+  --socket-path <path>      Set the Unix domain socket path (default: /run/wd-broker.sock)
+  --service-user <user>     Set the service user to drop privileges to (default: wd-broker)
+                            ATTENTION: Must not be 'root'
+  --syslog-facility <name>  Set syslog facility when running as a daemon
+                            Supported values: LOG_DAEMON (default), LOG_USER,
+                            LOG_LOCAL0 through LOG_LOCAL7
+  --no-watchdog             Disable hardware watchdog (test mode, default: false)
+
+Examples:
+  wd-broker --wd-timeout 15 --socket-path /run/your-own.sock
+  wd-broker --daemonize --service-user youruser
 ```
+
 You may have to add a dedicated service user and a correspunding group:
 ```bash
 # First create the group
@@ -53,52 +66,55 @@ sudo useradd --system --no-create-home --shell /usr/sbin/nologin \
 sudo usermod -aG wd-clients <user>
 ```
 
-### Command-line options
-
-- `--help`:  
-  Shows a help message with all available options and exits.
-
-- `--version`:  
-  Displays the current version of `wd-broker` and exits.
-
-- `--daemonize`:  
-  Runs the broker as a background daemon process. By default, it runs in the foreground.
-
-- `--wd-timeout <seconds>`:  
-  Sets the hardware watchdog timeout in seconds. Must be between `10` and `60`. Internally, the broker ticks one second faster than the configured timeout to ensure a safety margin.
-
-- `--socket-path <path>`:  
-  Specifies the Unix domain socket path used for communication. Default: `/run/wd-broker.sock`
-
-- `--service-user <username>`:  
-  Drops privileges to the specified user after initialization. Must not be `root`. Default: `wd-broker`
-
-- `--syslog-facility <facility>`:  
-  Specifies the syslog facility when running as a daemon. Supported values:
-  - `LOG_DAEMON` (default)
-  - `LOG_USER`
-  - `LOG_LOCAL0` through `LOG_LOCAL7`
-
-- `--no-watchdog`:  
-  Disables the hardware watchdog logic. The broker runs in simulation/test mode.
-
 ## wd-ctrl: Minimal Command-Line Tool
 
 The `wd-ctrl` tool is a helper utility provided with this project to simplify manual interaction with the broker:
 
-### Usage:
+### Usage
+
 ```bash
-sudo ./wd-ctrl status
-sudo ./wd-ctrl unregister <clientID | name>
+$ wd-ctrl --help
+Usage: wd-ctrl [OPTIONS] status | unregister <clientID|name>
+
+Options:
+  --help                    Show this help message and exit
+  --version                 Show version information and exit
+  --socket-path <path>      Use custom socket path (default: /run/wd-broker.sock)
+
+Commands:
+  status                    Show the current status of the broker and all clients
+  unregister <clientID|name>
+                            Unregister a client by its ID or name
+
+Examples:
+  wd-ctrl status
+  wd-ctrl unregister 4f3c0d9e8a1b4f21
+  wd-ctrl --socket-path /run/custom.sock status
 ```
 
-### Options:
-- `--socket-path <path>`: Override socket path
-- `--help`: Show help text
-- `--version`: Show version of the tool
+### Real World Example:
 
-The `status` command outputs broker and client information in a readable format. The `unregister` command removes a client by ID or (if unambiguous) by name. Only root is allowed to use the tool.
+```bash
+$ sudo wd-ctrl status
+daemon_version    : 0.32.0
+protocol_version  : 0.2
+wd_timeout_s      : 10
+active_clients    : 5
 
+Client ID          PID    Name                 Timeout (ms)  pidCheck
+---------------------------------------------------------------------
+3e3c89d422bd8e0e   107192 alpha                5000          on      
+d3142953f9fbc998   107192 beta                 5000          on      
+3d8059154fd9e903   107192 gamma                5000          on      
+147a5b1fef290064   107192 delta                5000          off     
+08cd8f39bfaeadc4   107192 alpha                5000          on  
+```
+
+Force unregistration of a client 
+```bash
+$ sudo wd-ctrl unregister <clientID | name>
+Client 'beta' unregistered successfully.
+```
 ## Protocol
 
 Clients communicate with the broker via a Unix domain socket (default: `/run/wd-broker.sock`).

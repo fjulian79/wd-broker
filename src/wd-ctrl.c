@@ -46,9 +46,18 @@
 void print_help(const char *progname) {
     printf("Usage: %s [OPTIONS] status | unregister <clientID|name>\n", progname);
     printf("\nOptions:\n");
-    printf("  --socket-path <path>  Use custom socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
-    printf("  --help                Show this help message\n");
-    printf("  --version             Show version information\n");
+    printf("  --help                    Show this help message and exit\n");
+    printf("  --version                 Show version information and exit\n");
+    printf("  --socket-path <path>      Use custom socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
+    printf("\nCommands:\n");
+    printf("  status                    Show the current status of the broker and all clients\n");
+    printf("  unregister <clientID|name>\n");
+    printf("                            Unregister a client by its ID or name\n");
+    printf("\nExamples:\n");
+    printf("  %s status\n", progname);
+    printf("  %s unregister 4f3c0d9e8a1b4f21\n", progname);
+    printf("  %s --socket-path /run/custom.sock status\n", progname);
+    printf("\n");
 }
 
 void print_table_header() {
