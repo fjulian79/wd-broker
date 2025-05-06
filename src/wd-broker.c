@@ -84,8 +84,8 @@ char         *socket_path = SOCKET_PATH_DEFAULT;
 volatile bool running = true;
 bool          daemonize = false;
 
-void print_help(const char *progname) {
-    printf("Usage: %s [OPTIONS]\n", progname);
+void print_help(void) {
+    printf("Usage: wd-broker [OPTIONS]\n");
     printf("\nOptions:\n");
     printf("  --help                    Show this help message and exit\n");
     printf("  --version                 Show version information and exit\n");
@@ -104,8 +104,8 @@ void print_help(const char *progname) {
     printf("                            LOG_LOCAL0 through LOG_LOCAL7\n");
     printf("  --no-watchdog             Disable hardware watchdog (test mode, default: false)\n");
     printf("\nExamples:\n");
-    printf("  %s --wd-timeout 15 --socket-path /run/your-own.sock\n", progname);
-    printf("  %s --daemonize --service-user youruser\n", progname);
+    printf("  wd-broker --wd-timeout 15 --socket-path /run/your-own.sock\n");
+    printf("  wd-broker --daemonize --service-user youruser\n");
     printf("\n");
 }
 
@@ -526,7 +526,7 @@ int main(int argc, char *argv[]) {
                 daemonize = true;
                 break;
             case 'h':
-                print_help(argv[0]);
+                print_help();
                 return EXIT_SUCCESS;
             case 'n':
                 watchdog_enabled = false;
@@ -547,7 +547,7 @@ int main(int argc, char *argv[]) {
                 printf("wd-broker v%s\n", PACKAGE_VERSION);
                 return 0;
             default:
-                print_help(argv[0]);
+                print_help();
                 return EXIT_FAILURE;
         }
     }

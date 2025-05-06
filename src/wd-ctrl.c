@@ -43,20 +43,21 @@
 
 #define arraysize(x) (sizeof(x) / sizeof((x)[0]))
 
-void print_help(const char *progname) {
-    printf("Usage: %s [OPTIONS] status | unregister <clientID|name>\n", progname);
+void print_help(void) {
+    printf("Usage: wd-ctrl [OPTIONS] status | unregister <clientID|name>\n");
     printf("\nOptions:\n");
     printf("  --help                    Show this help message and exit\n");
     printf("  --version                 Show version information and exit\n");
-    printf("  --socket-path <path>      Use custom socket path (default: %s)\n", SOCKET_PATH_DEFAULT);
+    printf("  --socket-path <path>      Use custom socket path (default: %s)\n",
+           SOCKET_PATH_DEFAULT);
     printf("\nCommands:\n");
     printf("  status                    Show the current status of the broker and all clients\n");
     printf("  unregister <clientID|name>\n");
     printf("                            Unregister a client by its ID or name\n");
     printf("\nExamples:\n");
-    printf("  %s status\n", progname);
-    printf("  %s unregister 4f3c0d9e8a1b4f21\n", progname);
-    printf("  %s --socket-path /run/custom.sock status\n", progname);
+    printf("  wd-ctrl status\n");
+    printf("  wd-ctrl unregister 4f3c0d9e8a1b4f21\n");
+    printf("  wd-ctrl --socket-path /run/custom.sock status\n");
     printf("\n");
 }
 
@@ -137,7 +138,7 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt_long(argc, argv, "hvs:", long_options, NULL)) != -1) {
         switch (opt) {
             case 'h':
-                print_help(argv[0]);
+                print_help();
                 return EXIT_SUCCESS;
             case 'v':
                 printf("wd-ctrl v%s\n", PACKAGE_VERSION);
@@ -146,7 +147,7 @@ int main(int argc, char *argv[]) {
                 socket_path = optarg;
                 break;
             default:
-                print_help(argv[0]);
+                print_help();
                 return EXIT_FAILURE;
         }
     }
@@ -158,7 +159,7 @@ int main(int argc, char *argv[]) {
 
     if (optind >= argc) {
         fprintf(stderr, "Error: Missing command.\n\n");
-        print_help(argv[0]);
+        print_help();
         return EXIT_FAILURE;
     }
 
@@ -233,7 +234,7 @@ int main(int argc, char *argv[]) {
         }
     } else {
         fprintf(stderr, "Error: Invalid arguments.\n\n");
-        print_help(argv[0]);
+        print_help();
         return EXIT_FAILURE;
     }
 
