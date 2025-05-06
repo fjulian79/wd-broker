@@ -1,5 +1,9 @@
-AC_INIT([wd-broker], [0.33.0], [https://github.com/fjulian79/wd-broker/issues])
+AC_INIT([wd-broker], [0.34.0], [https://github.com/fjulian79/wd-broker/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
+
+LT_INIT
+AM_PROG_AR
+AC_PROG_CC
 
 AC_ARG_WITH([socket-path],
     AS_HELP_STRING([--with-socket-path=PATH], [default Unix domain socket path]),

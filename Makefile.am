@@ -7,8 +7,10 @@ test-package: all
 	python3 test/gen_constants.py 
 	mkdir -p $(dist_testdir)
 	rm -rf $(dist_testdir)/*
+	cp -r src/.libs $(dist_testdir)/
 	cp src/wd-broker $(dist_testdir)/
 	cp src/wd-ctrl $(dist_testdir)/
+	cp src/wd-client-test $(dist_testdir)/
 	cp test/constants.py $(dist_testdir)/
 	cp test/common.py $(dist_testdir)/
 	cp test/test-*.py $(dist_testdir)/

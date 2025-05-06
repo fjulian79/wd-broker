@@ -50,21 +50,18 @@
 
 #include "common.h"
 #include "config.h"
+#include "wd-client.h"
 
 #define STR_HELPER(x)              #x
 #define STR(x)                     STR_HELPER(x)
 #define WD_HW_TIMEOUT_DEFAULT_S    10
 #define WD_HW_TIMEOUT_MIN_S        WD_HW_TIMEOUT_DEFAULT_S
 #define WD_HW_TIMEOUT_MAX_S        60
-#define WD_CLIENT_NAME_LEN         64
 #define WD_CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
 #define WD_REGISTER_SCANF_FORMAT   "%" WD_CLIENT_NAME_FMT_LEN_STR "s %d %15s %15s"
-#define WD_CLIENTID_LEN            17 // 16 hex digits + null terminator
 #define WD_CLIENTID_FMT_LEN        16 // Must be a number cant use CLIENTID_LEN - 1
 #define WD_CLIENTID_FMT_STR        STR(WD_CLIENTID_FMT_LEN)
 #define WD_CLIENTID_SCANF_FORMAT   "%" WD_CLIENTID_FMT_STR "s %15s"
-#define WD_CLIENT_TIMEOUT_MIN_MS   (5 * 1000)
-#define WD_CLIENT_TIMEOUT_MAX_MS   (300 * 1000)
 #define WD_CLIENT_IDENTIFIED       0
 #define WD_CLIENT_PID_MISMATCH     -1
 #define WD_CLIENT_NOT_FOUND        -2
