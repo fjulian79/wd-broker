@@ -73,10 +73,7 @@ void print_line_formatted(const char *line) {
 int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t bufsize) {
     int                sock = 0;
     struct sockaddr_un addr = {0};
-    fd_set             fds;
-    struct timeval     tv = {0};
-    int                ret = 0;
-    ssize_t            len, total = 0;
+    ssize_t            len = 0;
 
     sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
@@ -101,42 +98,12 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
         return -1;
     }
 
-    FD_ZERO(&fds);
-    FD_SET(sock, &fds);
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
-    while (total < (ssize_t)(bufsize - 1)) {
-        ret = select(sock + 1, &fds, NULL, NULL, &tv);
-        if (ret == -1) {
-            fprintf(stderr, "Error: select() failed: %s\n", strerror(errno));
-            close(sock);
-            return -1;
-        } else if (ret == 0) {
-            fprintf(stderr, "Timeout while waiting for response from server\n");
-            close(sock);
-            return -1;
-        }
-
-        len = read(sock, buf + total, bufsize - 1 - total);
-        if (len < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            fprintf(stderr, "Connection error while receiving response: %s\n", strerror(errno));
-            close(sock);
-            return -1;
-        } else if (len == 0) {
-            // EOF
-            break;
-        }
-
-        total += len;
-    }
+    len = read_with_timeout(sock, buf, bufsize, false); 
 
     close(sock);
-    if (total >= 0) {
-        buf[total] = '\0';
-        return (int)total;
+    if (len >= 0) {
+        buf[len] = '\0';
+        return (int)len;
     }
     return -1;
 }
@@ -188,7 +155,7 @@ int main(int argc, char *argv[]) {
 
     signal(SIGPIPE, SIG_IGN);
 
-    if (send_and_receive(socket_path, CMD_STATUS, buf, sizeof(buf)) <= 0) {
+    if (send_and_receive(socket_path, CMD_STATUS"\n", buf, sizeof(buf)) <= 0) {
         return EXIT_FAILURE;
     }
 

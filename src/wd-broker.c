@@ -290,7 +290,7 @@ void handle_command(int client_sock, client_t *clients) {
         return;
     }
 
-    len = read(client_sock, buf, sizeof(buf) - 1);
+    len = read_with_timeout(client_sock, buf, sizeof(buf) - 1, true);
     if (len <= 0) {
         write_str(client_sock, "ERROR no input\n");
         return;

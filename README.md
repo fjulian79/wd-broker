@@ -107,7 +107,8 @@ The protocol is simple and line-based. Each connection handles exactly **one com
 **General Rules:**
 - Commands are case-sensitive.
 - Maximum command length: 127 characters.
-- Commands may be terminated with `\n` (newline). Trailing newlines are ignored.
+- Commands **must be terminated with `\n` (newline)**.
+- Trailing newlines are ignored.
 - Up to 64 clients can be registered concurrently.
 - Commands are processed synchronously per connection.
 
@@ -122,10 +123,10 @@ Registers a new client.
 
 Example:
 ```
-REGISTER sensorA 15000
+REGISTER sensorA 15000\n
 → OK a4b7c8e912d0fc13
 
-REGISTER testtool 10000 ignorepid
+REGISTER testtool 10000 ignorepid\n
 → OK 7c6b7f3e91ab8d24
 ```
 
@@ -137,7 +138,7 @@ Renews the client's heartbeat.
 
 Example:
 ```
-PING a4b7c8e912d0fc13
+PING a4b7c8e912d0fc13\n
 → OK
 ```
 
@@ -149,7 +150,7 @@ Removes a client from the active list.
 
 Example:
 ```
-UNREGISTER a4b7c8e912d0fc13
+UNREGISTER a4b7c8e912d0fc13\n
 → OK
 ```
 
@@ -166,7 +167,7 @@ Returns system-level information and all active clients.
 
 Example:
 ```
-STATUS
+STATUS\n
 → daemon_version=0.28.0
 → protocol_version=0.1
 → wd_timeout_s=10

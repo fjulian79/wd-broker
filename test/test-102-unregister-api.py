@@ -39,15 +39,12 @@ def invalid(label, cmd):
 
 # Valid cases
 valid_cases = [
-    ("valid id",                    "UNREGISTER {}"),
-    ("valid id + nl",               "UNREGISTER {}\n"),
-    ("valid id again",              "UNREGISTER {}"),
     ("valid + nl",                  "UNREGISTER {}\n"),
-    ("valid + ws",                  "UNREGISTER   {}"),
-    ("valid uppercase id",          "UNREGISTER {}"),
-    ("valid + trailing ws",         "UNREGISTER {}  "),
-    ("valid + trailing ws + nl",    "UNREGISTER {}  \n"),
+    ("valid + ws",                  "UNREGISTER   {}\n"),
+    ("valid uppercase id",          "UNREGISTER {}\n"),
+    ("valid + trailing ws",         "UNREGISTER {}  \n"),
     ("valid + nl + trailing ws",    "UNREGISTER {}\n  "),
+    ("with trailing junk",          "UNREGISTER {}\njunk\n")
 ]
 
 for label, cmdfmt in valid_cases:
@@ -57,7 +54,7 @@ for label, cmdfmt in valid_cases:
 
 # Unregistering the same clientID again must fail, we reuse the last
 # registered clientID from above for this test
-invalid("unregister twice", f"UNREGISTER {cid}")
+invalid("unregister twice", f"UNREGISTER {cid}\n")
 
 # Invalid cases
 clientID = register("invalid-client", timeout_ms=DEFAULT_TIMEOUT*2)
@@ -66,13 +63,13 @@ bad_ids = derive_invalid_ids(clientID)
 for label, test_id in bad_ids.items():
     invalid(f"unregister {label}", f"UNREGISTER {test_id}\n")
 
+invalid("no newline",               f"UNREGISTER {clientID}")
 invalid("no id",                    f"UNREGISTER\n")
 invalid("extra arg",                f"UNREGISTER {clientID} extra\n")
 invalid("with tabs",                f"UNREGISTER\t{clientID}\n")
 invalid("with leading space",       f" UNREGISTER {clientID}\n")
 invalid("injection semicolon",      f"UNREGISTER {clientID}; rm -rf /\n")
-invalid("with newline in id",       f"UNREGISTER {clientID}\nPING {clientID}\n")
-invalid("with comment",             f"UNREGISTER {clientID} # comment\n")
+invalid("with junk",                f"UNREGISTER {clientID} junk\n")
 invalid("unicode id",               f"UNREGISTER tästID\n")
 invalid("control char",             f"UNREGISTER \x01ID123\n")
 

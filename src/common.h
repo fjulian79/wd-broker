@@ -27,7 +27,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define SOCKET_PROT_VERSION "0.2"
+#include <stdbool.h>
+
+#define SOCKET_PROT_VERSION "0.3"
 #define CMD_REGISTER        "REGISTER "
 #define CMD_PING            "PING "
 #define CMD_UNREGISTER      "UNREGISTER "
@@ -39,5 +41,16 @@ void fatal_errno(const char *context);
 
 /* Print the error message and exit */
 void fatal_error(const char *fmt, ...);
+
+/**
+ * Reads data from a file descriptor with a timeout.
+ *
+ * @param fd File descriptor to read from.
+ * @param buffer Buffer to store the read data.
+ * @param buffer_size Size of the buffer.
+ * @param stop_at_nl If true, stop reading at newline character.
+ * @return Number of bytes read on success, 0 on timeout, -1 on error.
+ */
+int read_with_timeout(int fd, char *buffer, size_t buffer_size, bool stop_at_nl);
 
 #endif /* COMMON_H */
