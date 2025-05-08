@@ -15,6 +15,7 @@
 # Build output
 wd-broker*
 wd-ctrl
+wd-client-test
 src/.dirstamp
 src/.deps/
 constants.py
@@ -28,6 +29,8 @@ configure
 config.h*
 config.log
 config.status
+config.guess
+config.sub
 depcomp
 install-sh
 missing
@@ -36,6 +39,8 @@ compile
 ltmain.sh
 m4/libtool.m4
 m4/lt*.m4
+ar-lib
+libtool
 
 # Backup and temp
 *~
@@ -43,3 +48,4 @@ m4/lt*.m4
 
 # Optional: build directories
 build/
+__pycache__
