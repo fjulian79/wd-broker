@@ -1,3 +1,21 @@
+dnl configure.ac – Autotools configure script for wd-broker.
+dnl
+dnl     Copyright 2025 Julian Friedrich
+dnl
+dnl Licensed under the Apache License, Version 2.0 (the "License");
+dnl you may not use this file except in compliance with the License.
+dnl You may obtain a copy of the License at:
+dnl
+dnl     http://www.apache.org/licenses/LICENSE-2.0
+dnl
+dnl Unless required by applicable law or agreed to in writing, software
+dnl distributed under the License is provided on an "AS IS" BASIS,
+dnl WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+dnl See the License for the specific language governing permissions and
+dnl limitations under the License.
+dnl
+dnl Source repository: https://github.com/fjulian79/wd-broker
+
 AC_INIT([wd-broker], [0.34.0], [https://github.com/fjulian79/wd-broker/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 

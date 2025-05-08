@@ -163,5 +163,4 @@ By explicitly defining threats using STRIDE, the design remains transparent and 
 
 ---
 
-*Last updated: 2025-05-01*
-
+*Last updated: 2025-05-09*

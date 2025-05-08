@@ -1,25 +1,25 @@
 /*
- * wd-broker, a minimalistic watchdog supervisor daemon that acts as the single
- * source of truth for hardware watchdog feeding on embedded Linux systems.
+ * wd-broker – Robust watchdog supervisor daemon for embedded Linux systems.
  *
- * Copyright (C) 2025 Julian Friedrich
+ * Designed to serve as the authoritative watchdog interface on systems with
+ * multiple cooperating processes. It coordinates watchdog feeding centrally
+ * and ensures each registered client meets its heartbeat obligations.
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ *     Copyright 2025 Julian Friedrich
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * This project is hosted on GitHub:
- *   https://github.com/fjulian79/wd-broker
- * Please feel free to file issues, open pull requests, or contribute there.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is provided on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Source repository: https://github.com/fjulian79/wd-broker
  */
 
 #define _GNU_SOURCE

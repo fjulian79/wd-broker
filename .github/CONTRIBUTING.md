@@ -1,6 +1,7 @@
 # Contributing to wd-broker
 
 Thank you for your interest in contributing to wd-broker! Contributions and feedback of any kind are welcome and highly appreciated.
+The `wd-broker` project is licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 
 ## Licensing Terms for Contributions
 
@@ -53,3 +54,5 @@ If you have questions or need clarification, feel free to mention the maintainer
 If you have questions or need help, open an issue clearly labeled as a question, or directly mention me (@fjulian79) in an issue or pull request.
 
 Thank you again for your support and contributions!
+
+

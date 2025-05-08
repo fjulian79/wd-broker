@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 #
-# common.py – shared test utilities for wd-broker test suite
+# common.py – Shared test utilities for the wd-broker test suite.
 #
-# Copyright (C) 2025 Julian Friedrich
+# Provides process control, socket helpers, and structured logging for
+# blackbox-style interaction tests with wd-broker via its UNIX socket protocol.
+# Designed to be dependency-free and test-automation friendly.
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+#     Copyright 2025 Julian Friedrich
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
 #
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# This file is part of the wd-broker project:
-#   https://github.com/fjulian79/wd-broker
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is provided on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
-# Please feel free to open issues or contribute improvements.
+# Source repository: https://github.com/fjulian79/wd-broker
 
 from constants import *
 import atexit
