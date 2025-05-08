@@ -1,10 +1,3 @@
-<!--
-SPDX-License-Identifier: Apache-2.0
-
-This file is part of the wd-broker project and is licensed under the Apache License, Version 2.0.
-For full license terms, see: https://www.apache.org/licenses/LICENSE-2.0
--->
-
 # Reporting Security Issues
 
 Security issues in `wd-broker` are taken seriously, and responsible disclosure of vulnerabilities is greatly appreciated.
