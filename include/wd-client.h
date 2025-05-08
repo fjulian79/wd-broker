@@ -50,6 +50,8 @@
 /**
  * Structure representing a wd-client instance.
  * Contains all necessary information for interacting with the wd-broker.
+ * The included status string is updated with the result of each operation in order to provide
+ * detailed error messages for logging in the application context.
  */
 typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN]; // Path to the Unix domain socket
@@ -74,8 +76,9 @@ typedef struct {
  * Updates the status field with the result of the operation.
  *
  * ATTENTION: The broker will use the given timeout value as it is. It's recomended to use a
- * slightly shorter PING intervall in your application to mitigate jitter. One or two seconds less
- * than the timeout value is a good choice.
+ * shorter PING intervall in your application to mitigate scheduling jitter or high system laod. 
+ * One or two seconds less than the timeout value is a good choice, or even 50% of the timeout value.
+ * It depends on your application needs and system design.
  *
  * @param client Pointer to the wd_client_t instance.
  * @param timeout_ms Timeout in milliseconds for the client.
