@@ -9,7 +9,7 @@ For details on the STRIDE methodology, see [Wikipedia – STRIDE model](https://
 `wd-broker` is a user-space daemon responsible for supervising access to the hardware watchdog on embedded Linux systems. It listens on a Unix Domain Socket (UDS) for client applications that must:
 
 - Register themselves (with a name and timeout)
-- Periodically ping the broker to prove they are alive
+- Periodically ping the broker to prove their fitness
 - Deregister when shutting down cleanly
 
 If any active client fails to ping within its declared timeout, the broker will stop feeding the hardware watchdog, resulting in a system reboot.
@@ -28,7 +28,7 @@ If any active client fails to ping within its declared timeout, the broker will 
 `wd-broker` requires elevated privileges only during startup:
 
 - To open `/dev/watchdog`, which typically requires root
-- To create the Unix socket with the correct permissions and group ownership
+- Depending on the actual socket path, to create the Unix socket with the correct permissions and group ownership
 
 After completing these steps, the broker **drops privileges** using `setgid()` and `setuid()` to run as an unprivileged user within the `wdclients` group. This ensures that even if the broker process is compromised during runtime, the system impact is limited.
 
@@ -56,34 +56,26 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 ### 2. Tampering (Data Manipulation)
 
-**Threat:** Malicious modification of data in transit or client state.
+**Threat:** Malicious modification of data in transit, client state, or other system data.
 
 **Risks:**
 
 - Modifying ping payloads to falsify liveness
 - Corrupting internal state to keep dead clients alive
+- Unregistering other clients
 
 **Mitigations:**
 
 - The broker verifies the `pid` of the process sending `PING` commands to ensure it matches the original registering process.
 - The socket protocol is request-response per connection with stateless handling.
 - Broker memory (client table) is private to the process; no external tampering is possible.
-- Privilege drop ensures internal state cannot be overwritten by unprivileged processes.
+- Dropping privileges limits the potential damage if the process is compromised.
 
 ---
 
 ### 3. Repudiation (Denying Responsibility)
 
-**Threat:** A client claims it did not perform a certain action (e.g., deregistering).
-
-**Risks:**
-
-- False claims of broker misbehavior
-
-**Mitigations:**
-
-- Optional logging with timestamp, UID, GID, and PID for each client action.
-- Deterministic behavior: same inputs lead to the same state.
+Repudiation is not applicable. Clients do not authenticate, and the broker has no expectation of accountable actions from them.
 
 ---
 
@@ -93,14 +85,15 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 **Risks:**
 
-- Leaking another client's registration state
+- Leaking another client's data (clientID, timeout, name, pid)
 
 **Mitigations:**
 
 - Socket is only accessible to the `wdclients` group.
-- Secrets are stored only in RAM and are not persisted by the broker.
+- Data is only stored in RAM and is not persisted by the broker.
 - Broker runs as an unprivileged user to minimize the leakage surface.
 - Even if a `clientID` is compromised, its use requires the `pid` to match the original registering process, which is considered highly unlikely in practice.
+- Note that the client can disable the PID check, but only once during registration. If it does, only its own `clientID` may be used by others. This limits the impact to that client's scope.
 
 ---
 
@@ -131,7 +124,7 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 **Mitigations:**
 
-- Broker starts as root only to open `/dev/watchdog`, then drops to an unprivileged user.
+- Broker starts as root to open `/dev/watchdog` and other needed resources, then drops to an unprivileged user.
 - Only feeds `/dev/watchdog`; no general-purpose execution or file access.
 - Socket group restriction prevents non-members from connecting.
 
@@ -145,6 +138,7 @@ The `wd-broker` daemon is designed to minimize trust while offering a robust wat
 - **Stateless protocol**: Ensuring predictable behavior and minimizing resource usage.
 - **Privilege dropping**: Running as an unprivileged user after initialization.
 - **Socket safety checks**: Verifying and recreating stale sockets to prevent interference.
+- **Memory safety**: The broker avoids dynamic memory allocation entirely. All state is kept in fixed-size structures in RAM, eliminating risks related to heap corruption, fragmentation, or allocation failure.
 
 By explicitly defining threats using STRIDE, the design remains transparent and auditable for safety-critical contexts.
 
@@ -156,10 +150,10 @@ By explicitly defining threats using STRIDE, the design remains transparent and 
 |----------------------------|-------------------------------|---------------------|
 | Spoofing                   | PID verification              | Implemented         |
 | Tampering                  | Stateless protocol            | Implemented         |
+| Repudiation                | None (Not applicable)         | n.a.                |
 | Information Disclosure     | Socket access control         | Implemented         |
 | Denial of Service (DoS)    | Limited socket access         | Implemented         |
 | Elevation of Privilege     | Privilege dropping            | Implemented         |
-| Logging (UID, GID, PID)    | Optional logging              | Planned             |
 
 ---
 
