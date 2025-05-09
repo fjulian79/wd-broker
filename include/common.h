@@ -25,7 +25,7 @@
 
 #include <stdbool.h>
 
-#define SOCKET_PROT_VERSION "0.3"
+#define SOCKET_PROT_VERSION "1.0"
 #define CMD_REGISTER        "REGISTER "
 #define CMD_PING            "PING "
 #define CMD_UNREGISTER      "UNREGISTER "

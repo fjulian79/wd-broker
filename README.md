@@ -1,7 +1,5 @@
 # wd-broker
 
-> ⚠️ **Work in Progress**: This project is under active development and not yet production-ready. Use at your own risk. Interfaces and behavior may change at any time.
-
 `wd-broker` is a lightweight watchdog supervisor for Linux-based systems, designed to manage hardware watchdogs and ensure system reliability by coordinating heartbeat signals from multiple applications. It acts as the **central authority for feeding the hardware watchdog** (`/dev/watchdog`) and allows multiple heterogeneous applications to register themselves, define individual timeout values, and send heartbeat messages.
 
 Designed for **reliability-critical systems**, `wd-broker` ensures that the hardware watchdog only gets fed when **all registered clients are responsive** – enabling true system resets when necessary.
@@ -16,6 +14,10 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 * Works with C binaries, Python scripts, shell tools, or whatever can use a Unix domain socket
 * Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
 * Optional per-client disabling of PID checks via `REGISTER ... ignorepid`
+
+## Changelog
+
+See the [CHANGELOG](./CHANGELOG.md) for a full list of changes.
 
 ## Security
 
