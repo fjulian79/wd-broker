@@ -46,6 +46,7 @@
 #define WD_CLIENT_ERR      -1 // General error
 #define WD_CLIENT_EPARAM   -2 // Invalid parameters
 #define WD_CLIENT_ETIMEOUT -3 // Timeout occurred
+#define WD_CLIENT_EVERSION -4 // Incompatible protocol version
 
 /**
  * Structure representing a wd-client instance.
@@ -71,7 +72,7 @@ typedef struct {
     }
 
 /**
- * Registers the client with the wd-broker.
+ * Registers the client with the wd-broker once the protocol version is checked.
  * If successful, sets the clientID in the wd_client_t instance.
  * Updates the status field with the result of the operation.
  *
@@ -83,7 +84,7 @@ typedef struct {
  * @param client Pointer to the wd_client_t instance.
  * @param timeout_ms Timeout in milliseconds for the client.
  * @param ignore_pid If true, the broker will ignore PID checks.
- * @return WD_CLIENT_OK on success, WD_CLIENT_ERR on error, WD_CLIENT_EPARAM for invalid parameters.
+ * @return WD_CLIENT_OK on success, or other error codes on failure.
  */
 int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore_pid);
 

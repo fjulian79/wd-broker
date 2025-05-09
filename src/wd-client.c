@@ -76,8 +76,51 @@ static int wd_client_connect(wd_client_t *client) {
     return socket_fd;
 }
 
+int wd_client_check_prot_version(wd_client_t *client) {
+    int socket_fd = -1;
+    char buffer[128] = {0};    
+    ssize_t len = 0;
+
+    socket_fd = wd_client_connect(client);
+    if (socket_fd < 0) {
+        return socket_fd;
+    }
+
+    if (write(socket_fd, "VERSION\n", 8) < 0) {
+        close(socket_fd);
+        WD_SET_STATUS(client, "Failed to send VERSION command: %s", strerror(errno));
+        return WD_CLIENT_ERR;
+    }
+
+    len = read_with_timeout(socket_fd, buffer, sizeof(buffer) - 1, false);
+    if (len <= 0) {
+        close(socket_fd);
+        WD_SET_STATUS(client, "Failed to read VERSION response");
+        return WD_CLIENT_ERR;
+    }
+
+    buffer[len] = '\0';
+    const char *prefix = "protocol_version=";
+    char *ver = strstr(buffer, prefix);
+    if (!ver) {
+        close(socket_fd);
+        WD_SET_STATUS(client, "VERSION response malformed: %s", buffer);
+        return WD_CLIENT_ERR;
+    }
+    ver += strlen(prefix);
+    if (strncmp(ver, SOCKET_PROT_VERSION, strlen(SOCKET_PROT_VERSION)) != 0) {
+        close(socket_fd);
+        WD_SET_STATUS(client, "Incompatible protocol version %s, expect %s", ver, SOCKET_PROT_VERSION);
+        return WD_CLIENT_EVERSION;
+    }
+    
+    close(socket_fd);
+    return WD_CLIENT_OK;
+}
+
 int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore_pid) {
     int socket_fd = -1;
+    int ret = WD_CLIENT_OK;
 
     if (!client || !client->name[0]) {
         WD_SET_STATUS(client, "Invalid parameters");
@@ -87,6 +130,11 @@ int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore
     if (timeout_ms < WD_CLIENT_TIMEOUT_MIN_MS || timeout_ms > WD_CLIENT_TIMEOUT_MAX_MS) {
         WD_SET_STATUS(client, "Invalid timeout value");
         return WD_CLIENT_EPARAM;
+    }
+
+    ret = wd_client_check_prot_version(client);
+    if(ret != WD_CLIENT_OK) {    
+        return ret;
     }
 
     socket_fd = wd_client_connect(client);
