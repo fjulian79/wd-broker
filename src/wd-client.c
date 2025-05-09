@@ -7,7 +7,7 @@
  * Designed for integration into embedded Linux applications with strict
  * watchdog coordination requirements. Offers clear status reporting and
  * timeout-aware socket handling.
- * 
+ *
  *     Copyright 2025 Julian Friedrich
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,8 +77,8 @@ static int wd_client_connect(wd_client_t *client) {
 }
 
 int wd_client_check_prot_version(wd_client_t *client) {
-    int socket_fd = -1;
-    char buffer[128] = {0};    
+    int     socket_fd = -1;
+    char    buffer[128] = {0};
     ssize_t len = 0;
 
     socket_fd = wd_client_connect(client);
@@ -101,7 +101,7 @@ int wd_client_check_prot_version(wd_client_t *client) {
 
     buffer[len] = '\0';
     const char *prefix = "protocol_version=";
-    char *ver = strstr(buffer, prefix);
+    char       *ver = strstr(buffer, prefix);
     if (!ver) {
         close(socket_fd);
         WD_SET_STATUS(client, "VERSION response malformed: %s", buffer);
@@ -110,10 +110,11 @@ int wd_client_check_prot_version(wd_client_t *client) {
     ver += strlen(prefix);
     if (strncmp(ver, SOCKET_PROT_VERSION, strlen(SOCKET_PROT_VERSION)) != 0) {
         close(socket_fd);
-        WD_SET_STATUS(client, "Incompatible protocol version %s, expect %s", ver, SOCKET_PROT_VERSION);
+        WD_SET_STATUS(client, "Incompatible protocol version %s, expect %s", ver,
+                      SOCKET_PROT_VERSION);
         return WD_CLIENT_EVERSION;
     }
-    
+
     close(socket_fd);
     return WD_CLIENT_OK;
 }
@@ -133,7 +134,7 @@ int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore
     }
 
     ret = wd_client_check_prot_version(client);
-    if(ret != WD_CLIENT_OK) {    
+    if (ret != WD_CLIENT_OK) {
         return ret;
     }
 
