@@ -6,19 +6,20 @@ The repository includes a portable test setup for verifying the broker’s behav
 
 1. Build the broker:
    ```bash
-   ./autogen.sh && ./configure && make
+   ./autogen.sh && ./configure && make && make check
    ```
 
 2. Create the test package:
    ```bash
-   make test-package
+   ./create-package.sh
    ```
 
-3. Copy and extract `wd-broker-test.tar.gz` to the target system.
+3. Copy and extract `wd-broker.tar.gz` to the target system.
 
 4. Run tests:
    ```bash
-   cd wd-broker-test
+   tar -axf wd-broker.tar.gz
+   cd wd-broker/tests
    ./run-tests.sh
    ```
 
@@ -31,10 +32,7 @@ You can also run individual tests:
 ```
 ## Test Descriptions
 
-- `test-client.py`: Registers a client and sends periodic PINGs.
-- `test-timeout.py`: Tests timeout behavior when PINGs stop (simulated).
-- `common.py`: Shared test logic (register, send_cmd, etc.)
-- `run-tests.sh`: Manages test execution, broker startup and shutdown.
+See file headers for details.
 
 ## Requirements
 
