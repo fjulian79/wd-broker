@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# clients.py – Simulates multiple concurrent wd-broker clients with PING/UNREGISTER behavior.
+# client-sim.py – Simulates multiple concurrent wd-broker clients with PING/UNREGISTER behavior.
 #
 # Spawns multiple named clients, each registering with the broker and periodically sending
 # PINGs until interrupted. Also tests the 'ignorepid' registration flag in mixed scenarios.
@@ -29,27 +29,29 @@ import os
 import threading
 import signal
 import sys
+import argparse
 
-SOCKET_PATH = "/run/wd-broker.sock"
-PING_INTERVAL = 1.0  # Sekunden
-TIMEOUT_MS = 5000
+DEFAULT_SOCKET_PATH = "/run/wd-broker.sock"
 
-clients = []
+tclients = []
 stop_event = threading.Event()
 
 class ClientThread(threading.Thread):
-    def __init__(self, name, ignorepid=False):
+    def __init__(self, socket_path, name, timeout_ms=5000, ignorepid=False):
         super().__init__()
+        self.socket_path = socket_path
         self.name = name
+        self.timeout_ms = timeout_ms
         self.ignorepid = ignorepid
         self.client_id = None
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
     def run(self):
         try:
-            self.sock.connect(SOCKET_PATH)
+            self.sock.connect(self.socket_path)
             ignore_flag = "ignorepid" if self.ignorepid else ""
-            self.sock.sendall(f"REGISTER {self.name} {TIMEOUT_MS} {ignore_flag}\n".encode())
+            register_cmd = f"REGISTER {self.name} {self.timeout_ms} {ignore_flag}".strip() + "\n"
+            self.sock.sendall(register_cmd.encode())
             response = self.sock.recv(1024).decode().strip()
             if not response.startswith("OK "):
                 print(f"[{self.name}] Failed to register: {response}")
@@ -64,17 +66,17 @@ class ClientThread(threading.Thread):
         while not stop_event.is_set():
             try:
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                    s.connect(SOCKET_PATH)
+                    s.connect(self.socket_path)
                     s.sendall(f"PING {self.client_id}\n".encode())
-                    _ = s.recv(1024)
+                    response = s.recv(1024).decode().strip()
+                    print(f"[{self.name}] Ping: {response}")
             except Exception as e:
                 print(f"[{self.name}] Ping failed: {e}")
-            time.sleep(PING_INTERVAL)
+            time.sleep(self.timeout_ms / 2000.0)
 
-        # Unregister on stop
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.connect(SOCKET_PATH)
+                s.connect(self.socket_path)
                 s.sendall(f"UNREGISTER {self.client_id}\n".encode())
                 _ = s.recv(1024)
                 print(f"[{self.name}] Unregistered")
@@ -86,20 +88,23 @@ def signal_handler(sig, frame):
     stop_event.set()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Simulate multiple wd-broker clients.")
+    parser.add_argument("--socket-path", default=DEFAULT_SOCKET_PATH, help="Path to broker UNIX domain socket (default: " + DEFAULT_SOCKET_PATH + ")")
+    args = parser.parse_args()
+
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Definition mit ignorepid pro Client
     client_definitions = [
-        ("alpha", False),
-        ("beta", False),
-        ("gamma", False),
-        ("delta", True),
-        ("alpha", False),
+        ("alpha", 5000, False),
+        ("beta", 6000, False),
+        ("gamma", 7000, False),
+        ("delta", 8000, True),
+        ("alpha", 5000, False),
     ]
 
     clients = []
-    for name, ignorepid in client_definitions:
-        t = ClientThread(name, ignorepid)
+    for name, timeout_ms, ignorepid in client_definitions:
+        t = ClientThread(args.socket_path, name, timeout_ms, ignorepid)
         clients.append(t)
         t.start()
 
