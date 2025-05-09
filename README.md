@@ -141,7 +141,7 @@ d3142953f9fbc998   107192 beta                 5000          on
 Force unregistration of a client
 
 ```bash
-$ sudo wd-ctrl unregister <clientID | name>
+$ sudo wd-ctrl unregister beta
 Client 'beta' unregistered successfully.
 ```
 
