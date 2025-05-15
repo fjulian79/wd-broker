@@ -49,10 +49,12 @@ valid("extra whitespace",      f"REGISTER   client123   {default_timeout}\n")
 valid("with newline",          f"REGISTER client123 {default_timeout}\n")
 valid("with ignorepid + lws",  f"REGISTER client123 {default_timeout}   ignorepid\n")
 valid("with ignorepid + tws",  f"REGISTER client123 {default_timeout} ignorepid   \n")
-
+valid("no newline",            f"REGISTER client123 {default_timeout}")
 
 # Invalid syntax
-invalid("no newline",          f"REGISTER client123 {default_timeout}")
+invalid("no blanks",           f"REGISTERclient123{default_timeout}")
+invalid("no blank 1",          f"REGISTERclient123 {default_timeout}")
+invalid("no blank 2",          f"REGISTER client123{default_timeout}")
 invalid("lowercase",           f"register client123 {default_timeout}\n")
 invalid("SentenenceCase",      f"Register client123 {default_timeout}\n")
 invalid("PascalCase",          f"RegIstEr client123 {default_timeout}\n")

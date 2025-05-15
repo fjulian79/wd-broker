@@ -30,7 +30,7 @@ def valid(label, cmd, expect="OK"):
     lines = set(line.strip() for line in reply.splitlines())
 
     expected = {
-        f"daemon_version={PACKAGE_VERSION}",
+        f"wd-broker_version={PACKAGE_VERSION}",
         f"protocol_version={SOCKET_PROT_VERSION}",
     }
 
@@ -52,9 +52,9 @@ broker.start()
 
 valid("VERSION",                    f"VERSION\n")
 valid("VERSION + tws",              f"VERSION  \n")
-valid("VERSION + nl + junk",        f"VERSION\njunk")
+valid("no newline",                 f"VERSION")
 
-invalid("no newline",               f"VERSION")
+invalid("VERSION + nl + junk",      f"VERSION\njunk")
 invalid("VERSION + lws",            f"  VERSION\n")
 invalid("VERSION + junk",           f"VERSIONblah\n")
 invalid("VERSION + ' ' + junk",     f"VERSION blah\n")

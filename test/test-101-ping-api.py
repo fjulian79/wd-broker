@@ -47,15 +47,17 @@ valid("valid + ws",                 f"PING   {clientID}\n")
 valid("valid uppercase id",         f"PING {clientID.upper()}\n")
 valid("valid + ws + nl",            f"PING {clientID}  \n")
 valid("valid + nl + ws",            f"PING {clientID}\n  ")
-valid("valid + junk",               f"PING {clientID}\njunk\n")
-valid("valid + invalid",            f"PING {clientID}\nPING {clientID_invalid}\n")
-valid("valid + vald",               f"PING {clientID}\nPING {clientID}\n")
+valid("no newline",                 f"PING {clientID}")
 
 # Invalid PINGs
 for label, test_id in bad_ids.items():
     invalid(f"{label}",             f"PING {test_id}\n")
 
-invalid("no newline",               f"PING {clientID}")
+invalid("no blank",                 f"PING{clientID}\n")
+invalid("valid + junk nl",          f"PING {clientID}\njunk\n")
+invalid("valid + junk",             f"PING {clientID} junk")
+invalid("valid + invalid",          f"PING {clientID}\nPING {clientID_invalid}\n")
+invalid("valid + vald",             f"PING {clientID}\nPING {clientID}\n")
 invalid("valid + leading ws",       f"  PING {clientID}\n")
 invalid("lowercase",                f"ping {clientID}\n")
 invalid("PascalCase",               f"PiNg {clientID}\n")

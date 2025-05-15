@@ -44,7 +44,7 @@ class ClientThread(threading.Thread):
         self.timeout_ms = timeout_ms
         self.ignorepid = ignorepid
         self.client_id = None
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
 
     def run(self):
         try:
@@ -65,7 +65,7 @@ class ClientThread(threading.Thread):
 
         while not stop_event.is_set():
             try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as s:
                     s.connect(self.socket_path)
                     s.sendall(f"PING {self.client_id}\n".encode())
                     response = s.recv(1024).decode().strip()
@@ -75,7 +75,7 @@ class ClientThread(threading.Thread):
             time.sleep(self.timeout_ms / 2000.0)
 
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as s:
                 s.connect(self.socket_path)
                 s.sendall(f"UNREGISTER {self.client_id}\n".encode())
                 _ = s.recv(1024)

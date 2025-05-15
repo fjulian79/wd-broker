@@ -55,7 +55,7 @@ static int wd_client_connect(wd_client_t *client) {
         return WD_CLIENT_EPARAM;
     }
 
-    socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    socket_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     if (socket_fd < 0) {
         WD_SET_STATUS(client, "Failed to create socket: %s", strerror(errno));
         return WD_CLIENT_ERR;
@@ -92,14 +92,13 @@ int wd_client_check_prot_version(wd_client_t *client) {
         return WD_CLIENT_ERR;
     }
 
-    len = read_with_timeout(socket_fd, buffer, sizeof(buffer) - 1, false);
+    len = read_with_timeout(socket_fd, buffer, sizeof(buffer));
     if (len <= 0) {
         close(socket_fd);
         WD_SET_STATUS(client, "Failed to read VERSION response");
         return WD_CLIENT_ERR;
     }
 
-    buffer[len] = '\0';
     const char *prefix = "protocol_version=";
     char       *ver = strstr(buffer, prefix);
     if (!ver) {
@@ -153,7 +152,7 @@ int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore
     }
 
     char    response[128];
-    ssize_t len = read_with_timeout(socket_fd, response, sizeof(response) - 1, true);
+    ssize_t len = read_with_timeout(socket_fd, response, sizeof(response));
     if (len < 0) {
         close(socket_fd);
         WD_SET_STATUS(client, "Failed to read REGISTER response: %s", strerror(errno));
@@ -164,7 +163,6 @@ int wd_client_register(wd_client_t *client, unsigned int timeout_ms, bool ignore
         return WD_CLIENT_ETIMEOUT;
     }
 
-    response[len] = '\0';
     if (strncmp(response, "OK ", 3) == 0) {
         strncpy(client->clientID, response + 3, sizeof(client->clientID) - 1);
         client->clientID[sizeof(client->clientID) - 1] = '\0'; // Nullterminierung sicherstellen
@@ -246,7 +244,7 @@ int wd_client_unregister(wd_client_t *client) {
     }
 
     char    response[64];
-    ssize_t len = read_with_timeout(socket_fd, response, sizeof(response) - 1, true);
+    ssize_t len = read_with_timeout(socket_fd, response, sizeof(response));
     if (len < 0) {
         close(socket_fd);
         WD_SET_STATUS(client, "Failed to read UNREGISTER response: %s", strerror(errno));
@@ -257,7 +255,6 @@ int wd_client_unregister(wd_client_t *client) {
         return WD_CLIENT_ETIMEOUT;
     }
 
-    response[len] = '\0';
     if (strncmp(response, "OK", 2) == 0) {
         close(socket_fd);
         WD_SET_STATUS(client, "UNREGISTER successful for client %s (%s) ", client->name,

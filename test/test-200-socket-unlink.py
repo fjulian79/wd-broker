@@ -36,7 +36,7 @@ def create_regular_file(path=SOCKET_PATH):
         f.write("not a socket")
 
 def create_active_socket(path=SOCKET_PATH):
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     try:
         os.unlink(path)
     except FileNotFoundError:
@@ -46,7 +46,7 @@ def create_active_socket(path=SOCKET_PATH):
     return sock
 
 def create_stale_socket(path=SOCKET_PATH):
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     try:
         os.unlink(path)
     except FileNotFoundError:

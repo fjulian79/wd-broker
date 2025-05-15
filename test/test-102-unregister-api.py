@@ -40,7 +40,7 @@ valid_cases = [
     ("valid uppercase id",          "UNREGISTER {}\n"),
     ("valid + trailing ws",         "UNREGISTER {}  \n"),
     ("valid + nl + trailing ws",    "UNREGISTER {}\n  "),
-    ("with trailing junk",          "UNREGISTER {}\njunk\n")
+    ("no newline",                  "UNREGISTER {}")
 ]
 
 for label, cmdfmt in valid_cases:
@@ -59,9 +59,11 @@ bad_ids = derive_invalid_ids(clientID)
 for label, test_id in bad_ids.items():
     invalid(f"unregister {label}", f"UNREGISTER {test_id}\n")
 
-invalid("no newline",               f"UNREGISTER {clientID}")
+
 invalid("no id",                    f"UNREGISTER\n")
-invalid("extra arg",                f"UNREGISTER {clientID} extra\n")
+invalid("no space",                 f"UNREGISTER{clientID}"),
+invalid("extra nl+junk",            f"UNREGISTER {clientID}\njunk\n"),
+invalid("extra junk",               f"UNREGISTER {clientID} extra\n")
 invalid("with tabs",                f"UNREGISTER\t{clientID}\n")
 invalid("with leading space",       f" UNREGISTER {clientID}\n")
 invalid("injection semicolon",      f"UNREGISTER {clientID}; rm -rf /\n")

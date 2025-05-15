@@ -85,7 +85,7 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
     struct sockaddr_un addr = {0};
     ssize_t            len = 0;
 
-    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     if (sock < 0) {
         fprintf(stderr, "Error: socket() failed: %s\n", strerror(errno));
         return -1;
@@ -108,11 +108,10 @@ int send_and_receive(const char *socket_path, const char *cmd, char *buf, size_t
         return -1;
     }
 
-    len = read_with_timeout(sock, buf, bufsize, false);
+    len = read_with_timeout(sock, buf, bufsize);
 
     close(sock);
     if (len >= 0) {
-        buf[len] = '\0';
         return (int)len;
     }
     return -1;
@@ -165,7 +164,7 @@ int main(int argc, char *argv[]) {
 
     signal(SIGPIPE, SIG_IGN);
 
-    if (send_and_receive(socket_path, CMD_STATUS "\n", buf, sizeof(buf)) <= 0) {
+    if (send_and_receive(socket_path, CMD_STATUS, buf, sizeof(buf)) <= 0) {
         return EXIT_FAILURE;
     }
 

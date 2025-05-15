@@ -287,12 +287,11 @@ void handle_command(int client_sock, client_t *clients) {
         return;
     }
 
-    len = read_with_timeout(client_sock, buf, sizeof(buf) - 1, true);
+    len = read_with_timeout(client_sock, buf, sizeof(buf));
     if (len <= 0) {
         write_str(client_sock, "ERROR no input\n");
         return;
     }
-    buf[len] = '\0';
 
     if (strncmp(buf, CMD_REGISTER, strlen(CMD_REGISTER)) == 0) {
         char         name[WD_CLIENT_NAME_LEN];
@@ -415,7 +414,11 @@ void handle_command(int client_sock, client_t *clients) {
         }
 
     } else if (strncmp(buf, CMD_STATUS, strlen(CMD_STATUS)) == 0) {
-        char extra[32];
+        char   extra[32];
+        char   msg[4096] = {0};
+        size_t offset = 0;
+        size_t active_clients = 0;
+
         if (sscanf(buf + strlen(CMD_STATUS), " %31s", extra) == 1) {
             write_str(client_sock, "ERROR invalid syntax\n");
             return;
@@ -427,31 +430,45 @@ void handle_command(int client_sock, client_t *clients) {
             return;
         }
 
-        write_str(client_sock, "daemon_version=%s\n", PACKAGE_VERSION);
-        write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
-        write_str(client_sock, "wd_timeout_s=%d\n", wd_timeout_s);
-        size_t active_clients = 0;
+        offset +=
+            snprintf(msg + offset, sizeof(msg) - offset, "daemon_version=%s\n", PACKAGE_VERSION);
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "protocol_version=%s\n",
+                           SOCKET_PROT_VERSION);
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "wd_timeout_s=%d\n", wd_timeout_s);
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 active_clients++;
             }
         }
-        write_str(client_sock, "active_clients=%d\n", active_clients);
+        offset +=
+            snprintf(msg + offset, sizeof(msg) - offset, "active_clients=%ld\n", active_clients);
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
-                write_str(client_sock, "%s %d %s %u %d\n", clients[i].clientID, (int)clients[i].pid,
-                          clients[i].name, clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
+                offset += snprintf(msg + offset, sizeof(msg) - offset, "%s %d %s %u %d\n",
+                                   clients[i].clientID, (int)clients[i].pid, clients[i].name,
+                                   clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
             }
         }
+
+        if (write(client_sock, msg, offset) < 0) {
+            log_message(LOG_ERR, "Failed to send status message: %s", strerror(errno));
+        }
     } else if (strncmp(buf, CMD_VERSION, strlen(CMD_VERSION)) == 0) {
-        char extra[32];
+        char   extra[32];
+        char   msg[128] = {0};
+        size_t offset = 0;
         if (sscanf(buf + strlen(CMD_VERSION), " %31s", extra) == 1) {
             write_str(client_sock, "ERROR invalid syntax\n");
             return;
         }
 
-        write_str(client_sock, "daemon_version=%s\n", PACKAGE_VERSION);
-        write_str(client_sock, "protocol_version=%s\n", SOCKET_PROT_VERSION);
+        offset +=
+            snprintf(msg + offset, sizeof(msg) - offset, "wd-broker_version=%s\n", PACKAGE_VERSION);
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "protocol_version=%s\n",
+                           SOCKET_PROT_VERSION);
+        if (write(client_sock, msg, offset) < 0) {
+            log_message(LOG_ERR, "Failed to send status message: %s", strerror(errno));
+        }
     } else {
         write_str(client_sock, "ERROR unknown command\n");
     }
@@ -495,7 +512,7 @@ int main(int argc, char *argv[]) {
     int                watchdog_fd = -1;
     bool               watchdog_enabled = true;
     bool               all_ok = true;
-    int                server_sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    int                server_sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     struct sockaddr_un addr = {0};
     struct stat        st;
     int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
@@ -579,7 +596,7 @@ int main(int argc, char *argv[]) {
                         socket_path);
         }
 
-        int probe_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        int probe_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
         if (probe_fd < 0) {
             fatal_errno("Could not create socket to test for active broker");
         }
@@ -727,7 +744,7 @@ int main(int argc, char *argv[]) {
                 if (clients[i].active) {
                     unsigned int age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {
-                        log_message(LOG_CRIT,
+                        log_message(LOG_ALERT,
                                     "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u "
                                     "ms > %d ms)",
                                     clients[i].name, (int)clients[i].pid, clients[i].clientID, age,

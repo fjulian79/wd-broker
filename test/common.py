@@ -36,7 +36,7 @@ import time
 SOCKET_PATH = "/tmp/wd-broker-test.sock"
 DEFAULT_TIMEOUT = WD_CLIENT_TIMEOUT_MIN_MS * 2
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TEST_BINARY = os.path.join(SCRIPT_DIR, "wd-broker")
+TEST_BINARY = "wd-broker" #"os.path.join(SCRIPT_DIR, "wd-broker")
 
 def log(level, *args):
     valid_levels = {"DEBUG", "INFO", "STEP", "ERROR"}
@@ -207,7 +207,7 @@ def unregister(clientID, name=None, expect="OK"):
     check_cmd(label, f"UNREGISTER {clientID}\n", expect=expect)
 
 def send_socket_command(cmd, socket_path, timeout_s=30):
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as sock:
         sock.settimeout(timeout_s)
         sock.connect(socket_path)
         sock.sendall(cmd.encode())
