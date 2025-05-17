@@ -163,15 +163,41 @@ void log_message(int priority, const char *fmt, ...) {
     va_end(ap);
 }
 
-void write_str(int fd, const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-
-    if (vdprintf(fd, fmt, ap) < 0) {
-        log_message(LOG_ERR, "vdprintf: %s", strerror(errno));
+int parse_syslog_facility(const char *str) {
+    if (str == NULL) {
+        return LOG_DAEMON;
     }
 
-    va_end(ap);
+    if (strcmp(str, "LOG_USER") == 0) {
+        return LOG_USER;
+    } else if (strcmp(str, "LOG_DAEMON") == 0) {
+        return LOG_DAEMON;
+    } else if (strcmp(str, "LOG_LOCAL0") == 0) {
+        return LOG_LOCAL0;
+    } else if (strcmp(str, "LOG_LOCAL1") == 0) {
+        return LOG_LOCAL1;
+    } else if (strcmp(str, "LOG_LOCAL2") == 0) {
+        return LOG_LOCAL2;
+    } else if (strcmp(str, "LOG_LOCAL3") == 0) {
+        return LOG_LOCAL3;
+    } else if (strcmp(str, "LOG_LOCAL4") == 0) {
+        return LOG_LOCAL4;
+    } else if (strcmp(str, "LOG_LOCAL5") == 0) {
+        return LOG_LOCAL5;
+    } else if (strcmp(str, "LOG_LOCAL6") == 0) {
+        return LOG_LOCAL6;
+    } else if (strcmp(str, "LOG_LOCAL7") == 0) {
+        return LOG_LOCAL7;
+    }
+
+    /* Can't user fatal_error(...) here because the compiler complains about having a
+     * no return statement in a non-void function */
+    fprintf(stderr, "Error: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
+    exit(EXIT_FAILURE);
+}
+
+void get_now(struct timespec *ts) {
+    clock_gettime(CLOCK_MONOTONIC, ts);
 }
 
 void make_clientID(char *clientID_out) {
@@ -208,6 +234,17 @@ void make_clientID(char *clientID_out) {
     }
 
     clientID_out[WD_CLIENTID_LEN - 1] = '\0';
+}
+
+void write_str(int fd, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+
+    if (vdprintf(fd, fmt, ap) < 0) {
+        log_message(LOG_ERR, "vdprintf: %s", strerror(errno));
+    }
+
+    va_end(ap);
 }
 
 bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out_id) {
@@ -256,21 +293,6 @@ int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, c
         }
     }
     return WD_CLIENT_NOT_FOUND;
-}
-
-void get_now(struct timespec *ts) {
-    clock_gettime(CLOCK_MONOTONIC, ts);
-}
-
-unsigned int ms_since(struct timespec *then) {
-    struct timespec now;
-    get_now(&now);
-    return (now.tv_sec - then->tv_sec) * 1000 + (now.tv_nsec - then->tv_nsec) / 1000000;
-}
-
-void signal_handler(int sig) {
-    log_message(LOG_INFO, "Received signal %d, shutting down...", sig);
-    running = false;
 }
 
 void handle_command(int client_sock, client_t *clients) {
@@ -474,37 +496,15 @@ void handle_command(int client_sock, client_t *clients) {
     }
 }
 
-int parse_syslog_facility(const char *str) {
-    if (str == NULL) {
-        return LOG_DAEMON;
-    }
+unsigned int ms_since(struct timespec *then) {
+    struct timespec now;
+    get_now(&now);
+    return (now.tv_sec - then->tv_sec) * 1000 + (now.tv_nsec - then->tv_nsec) / 1000000;
+}
 
-    if (strcmp(str, "LOG_USER") == 0) {
-        return LOG_USER;
-    } else if (strcmp(str, "LOG_DAEMON") == 0) {
-        return LOG_DAEMON;
-    } else if (strcmp(str, "LOG_LOCAL0") == 0) {
-        return LOG_LOCAL0;
-    } else if (strcmp(str, "LOG_LOCAL1") == 0) {
-        return LOG_LOCAL1;
-    } else if (strcmp(str, "LOG_LOCAL2") == 0) {
-        return LOG_LOCAL2;
-    } else if (strcmp(str, "LOG_LOCAL3") == 0) {
-        return LOG_LOCAL3;
-    } else if (strcmp(str, "LOG_LOCAL4") == 0) {
-        return LOG_LOCAL4;
-    } else if (strcmp(str, "LOG_LOCAL5") == 0) {
-        return LOG_LOCAL5;
-    } else if (strcmp(str, "LOG_LOCAL6") == 0) {
-        return LOG_LOCAL6;
-    } else if (strcmp(str, "LOG_LOCAL7") == 0) {
-        return LOG_LOCAL7;
-    }
-
-    /* Can't user fatal_error(...) here because the compiler complains about having a
-     * no return statement in a non-void function */
-    fprintf(stderr, "Error: Only LOG_USER, LOG_DAEMON and LOG_LOCAL* are supported\n");
-    exit(EXIT_FAILURE);
+void signal_handler(int sig) {
+    log_message(LOG_INFO, "Received signal %d, shutting down...", sig);
+    running = false;
 }
 
 int main(int argc, char *argv[]) {
