@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <grp.h>
+#include <limits.h>
 #include <linux/watchdog.h>
 #include <pwd.h>
 #include <signal.h>
@@ -76,8 +77,14 @@ typedef struct {
     bool            checkPID;
 } client_t;
 
-int           wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
-char         *socket_path = SOCKET_PATH_DEFAULT;
+typedef struct {
+    char socket_path[WD_CLIENT_SOCKPATH_LEN];
+    int  wd_timeout_s;
+    char service_user[LOGIN_NAME_MAX];
+    int  syslog_facility;
+} wd_config_t;
+
+wd_config_t   config;
 volatile bool running = true;
 bool          daemonize = false;
 
@@ -456,7 +463,8 @@ void handle_command(int client_sock, client_t *clients) {
             snprintf(msg + offset, sizeof(msg) - offset, "daemon_version=%s\n", PACKAGE_VERSION);
         offset += snprintf(msg + offset, sizeof(msg) - offset, "protocol_version=%s\n",
                            SOCKET_PROT_VERSION);
-        offset += snprintf(msg + offset, sizeof(msg) - offset, "wd_timeout_s=%d\n", wd_timeout_s);
+        offset +=
+            snprintf(msg + offset, sizeof(msg) - offset, "wd_timeout_s=%d\n", config.wd_timeout_s);
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 active_clients++;
@@ -517,8 +525,6 @@ int main(int argc, char *argv[]) {
     struct stat        st;
     int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     struct itimerspec  timer_spec = {0};
-    const char        *service_user = SERVICE_USER_DEFAULT;
-    int                facility = LOG_DAEMON;
     bool               started_as_root = geteuid() == 0 ? true : false;
 
     static struct option long_options[] = {
@@ -534,6 +540,13 @@ int main(int argc, char *argv[]) {
     };
     int opt;
 
+    /* Initialize config with default values to be save */
+    memset(&config, 0, sizeof(config));
+    strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
+    strncpy(config.service_user, SERVICE_USER_DEFAULT, sizeof(config.service_user));
+    config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
+    config.syslog_facility = LOG_DAEMON;
+
     while ((opt = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
         switch (opt) {
             case 'd':
@@ -546,16 +559,16 @@ int main(int argc, char *argv[]) {
                 watchdog_enabled = false;
                 break;
             case 'p':
-                socket_path = optarg;
+                strncpy(config.socket_path, optarg, sizeof(config.socket_path) - 1);
                 break;
             case 's':
-                facility = parse_syslog_facility(optarg);
+                config.syslog_facility = parse_syslog_facility(optarg);
                 break;
             case 't':
-                wd_timeout_s = atoi(optarg);
+                config.wd_timeout_s = atoi(optarg);
                 break;
             case 'u':
-                service_user = optarg;
+                strncpy(config.service_user, optarg, sizeof(config.service_user) - 1);
                 break;
             case 'v':
                 printf("wd-broker v%s\n", PACKAGE_VERSION);
@@ -566,7 +579,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (wd_timeout_s < WD_HW_TIMEOUT_MIN_S || wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
+    if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S || config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
         fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
                     WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
     }
@@ -574,26 +587,26 @@ int main(int argc, char *argv[]) {
     /* We want to tick one second faster then the hardware watchdog to have a safety margin
      * for scheduling jitter and high CPU loads. The minimum value of wd_timeout_s is
      * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
-    timer_spec.it_interval.tv_sec = wd_timeout_s - 1;
+    timer_spec.it_interval.tv_sec = config.wd_timeout_s - 1;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
         fatal_errno("timerfd_settime failed");
     }
 
-    struct passwd *pw = getpwnam(service_user);
+    struct passwd *pw = getpwnam(config.service_user);
     if (!pw) {
-        fatal_error("Service user '%s' does not exist.\n", service_user);
+        fatal_error("Service user '%s' does not exist.\n", config.service_user);
     }
     if (pw->pw_uid == 0) {
         fatal_error("Refusing to drop privileges to root, use a different service user.\n");
     }
 
     /* Do not trust the given socket path, check if it is a socket and remove it if it is */
-    if (lstat(socket_path, &st) == 0) {
+    if (lstat(config.socket_path, &st) == 0) {
         if (!S_ISSOCK(st.st_mode)) {
             fatal_error("Cannot use '%s'. File exists but is not a socket.\n"
                         "Hint: Remove the file or choose a different path.",
-                        socket_path);
+                        config.socket_path);
         }
 
         int probe_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
@@ -602,10 +615,10 @@ int main(int argc, char *argv[]) {
         }
 
         addr.sun_family = AF_UNIX;
-        strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+        strncpy(addr.sun_path, config.socket_path, sizeof(addr.sun_path));
         if (connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
             close(probe_fd);
-            fatal_error("Active wd-broker instance detected at '%s'.\n", socket_path);
+            fatal_error("Active wd-broker instance detected at '%s'.\n", config.socket_path);
         }
 
         if (errno != ECONNREFUSED) {
@@ -615,8 +628,8 @@ int main(int argc, char *argv[]) {
 
         close(probe_fd);
 
-        if (unlink(socket_path) == 0) {
-            printf("Removed stale socket at '%s'\n", socket_path);
+        if (unlink(config.socket_path) == 0) {
+            printf("Removed stale socket at '%s'\n", config.socket_path);
         } else {
             fatal_errno("Could not remove stale socket file");
         }
@@ -625,15 +638,16 @@ int main(int argc, char *argv[]) {
     /* socket path is fine, create it */
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+    strncpy(addr.sun_path, config.socket_path, sizeof(addr.sun_path));
     if (bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         if (errno == EACCES) {
-            fprintf(stderr, "Error: Permission denied to bind to socket path '%s'\n", socket_path);
+            fprintf(stderr, "Error: Permission denied to bind to socket path '%s'\n",
+                    config.socket_path);
             if (!started_as_root) {
                 fprintf(stderr, "Please run as root or use a different socket path\n");
             }
         } else {
-            fatal_error("Failed to bind to socket path '%s'\n", socket_path);
+            fatal_error("Failed to bind to socket path '%s'\n", config.socket_path);
         }
         exit(EXIT_FAILURE);
     }
@@ -642,10 +656,10 @@ int main(int argc, char *argv[]) {
     }
 
     /* Set socket permissions to the service user and group */
-    if (chmod(socket_path, 0660) == -1) {
+    if (chmod(config.socket_path, 0660) == -1) {
         fatal_errno("Could not set permissions on socket file");
     }
-    if (started_as_root && chown(socket_path, pw->pw_uid, pw->pw_gid) == -1) {
+    if (started_as_root && chown(config.socket_path, pw->pw_uid, pw->pw_gid) == -1) {
         fatal_errno("Could not set permissions on socket file");
     }
 
@@ -664,7 +678,7 @@ int main(int argc, char *argv[]) {
         if (watchdog_fd == -1) {
             fatal_error("Failed to open /dev/watchdog: %s\n", strerror(errno));
         }
-        if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &wd_timeout_s) == -1) {
+        if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &config.wd_timeout_s) == -1) {
             fatal_error("Failed to set watchdog timeout: %s\n", strerror(errno));
         }
     }
@@ -701,11 +715,12 @@ int main(int argc, char *argv[]) {
         fclose(stdin);
         fclose(stdout);
         fclose(stderr);
-        openlog("wd-broker", LOG_PID | LOG_NDELAY, facility);
+        openlog("wd-broker", LOG_PID | LOG_NDELAY, config.syslog_facility);
     }
 
-    log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION, socket_path);
-    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", wd_timeout_s);
+    log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION,
+                config.socket_path);
+    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -785,7 +800,7 @@ int main(int argc, char *argv[]) {
         fflush(stdout);
         fflush(stderr);
         close(timer_fd);
-        unlink(socket_path);
+        unlink(config.socket_path);
         while (running) {
             sleep(1);
         }
@@ -810,6 +825,6 @@ int main(int argc, char *argv[]) {
 
     closelog();
     close(timer_fd);
-    unlink(socket_path);
+    unlink(config.socket_path);
     return 0;
 }
