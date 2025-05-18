@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.0-rc2] - 2025-05-18
+
+### Added
+- Added logging of WDIOC_GETBOOTSTATUS information when starting wd-broker
+
 ## [2.0.0-rc1] - 2025-05-18
 
 ### Added

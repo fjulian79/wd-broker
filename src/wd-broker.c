@@ -69,6 +69,11 @@
 #define WD_CLIENT_NOT_FOUND        -2
 
 typedef struct {
+    int flag;
+    const char *name;
+} BootFlag;
+
+typedef struct {
     char            clientID[WD_CLIENTID_LEN];
     char            name[WD_CLIENT_NAME_LEN];
     pid_t           pid;
@@ -83,6 +88,16 @@ typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN];
     int  wd_timeout_s;
 } wd_config_t;
+
+static const BootFlag bootflags[] = {
+    { WDIOF_OVERHEAT,  " OVERHEAT" },
+    { WDIOF_FANFAULT,  " FANFAULT" },
+    { WDIOF_EXTERN1,   " EXTERN1" },
+    { WDIOF_EXTERN2,   " EXTERN2" },
+    { WDIOF_POWERUNDER," POWERUNDER" },
+    { WDIOF_CARDRESET, " CARDRESET" },
+    { WDIOF_POWEROVER, " POWEROVER" },
+};
 
 wd_config_t   config;
 volatile bool running = true;
@@ -301,6 +316,21 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
     }
 
     fclose(f);
+}
+
+void log_bootstatus(int bootstatus) {
+    char flags[128] = {0};
+    for (size_t i = 0; i < sizeof(bootflags)/sizeof(bootflags[0]); ++i) {
+        if (bootstatus & bootflags[i].flag) {
+            strncat(flags, bootflags[i].name, sizeof(flags) - strlen(flags) - 1);
+        }
+    }
+
+    if (strlen(flags) == 0) {
+        strncat(flags, " none", sizeof(flags) - 1);
+    }
+
+    log_message(LOG_INFO, "Boot status 0x%08x:%s", bootstatus, flags);
 }
 
 void make_clientID(char *clientID_out) {
@@ -836,7 +866,18 @@ int main(int argc, char *argv[]) {
 
     log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION,
                 config.socket_path);
-    log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
+    if(watchdog_fd != -1) {
+        int bootstatus = 0;
+        log_message(LOG_INFO, "Opened hardware watchdog device /dev/watchdog");
+        log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
+        if (ioctl(watchdog_fd, WDIOC_GETBOOTSTATUS, &bootstatus) == -1) {
+            log_message(LOG_ERR, "Failed to get boot status: %s", strerror(errno));
+        } else {
+            log_bootstatus(bootstatus);        
+        }
+    } else {
+        log_message(LOG_INFO, "Running in test mode, no hardware watchdog used");
+    }
     for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
         if (clients[i].anounced) {
             log_message(LOG_INFO, "Client '%s' announced, expected within %d ms", clients[i].name,
