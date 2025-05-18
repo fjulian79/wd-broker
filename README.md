@@ -8,12 +8,16 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 
 * Centralized control over `/dev/watchdog`
 * Simple, line-based protocol over Unix domain socket
-* Each client defines its own timeout
+* Each client defines its own heartbeat timeout
+* Announced (mandatory) clients can be defined in the configuration file
+* If an announced client does not register within its timeout, system reset will be initiated
+* Strict check of config file ownership and permissions
 * Must be started as root but runs as a non-root user after initializing `/dev/watchdog` for enhanced security (privilege dropping)
 * Restricts access to the used Unix domain socket to authorized users or groups (access control)
 * Works with C binaries, Python scripts, shell tools, or whatever can use a Unix domain socket
 * Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
 * Optional per-client disabling of PID checks via `REGISTER ... ignorepid`
+* Written with portability in mind
 
 ## Changelog
 
@@ -30,6 +34,30 @@ For a detailed analysis of the system’s trust boundaries and mitigations, refe
 Any kind of contribution (issues, pull requests or just feedback) is welcome!
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.
 
+## Building and Installation
+`wd-broker` is a C project and can be built using the standard `./configure`, `make`, and `make install` commands. At time of writing, there are no additional dependencies required to build the project. The project uses the GNU Autotools build system and libtool for shared library support. The project is designed to be portable and should work on most Linux distributions. The included tests are written in Python and require Python 3 to run. 
+
+Define the configuration file location via `--sysconfdir` if you want to change the default location (`/etc`).
+
+Please note that `make install` will not set configuration file permissions or ownership. This must be done manually after installation. This is to avoid errors due to missing users or groups.
+
+To build and install natively, run:
+````
+./autogen.sh
+./configure
+make
+sudo make install
+````
+
+Cross-compilation is supported via the `--host` parameter of `./configure`.
+In this case, do not use `--prefix` to set the staging directory, use `make install DESTDIR=<path>` instead.
+`````
+./autogen.sh
+./configure --host=<target> --sysconfdir=/usr/local
+make
+make install DESTDIR=<path>
+`````
+
 ## wd-broker 
 
 `wd-broker` is a daemon that manages `/dev/watchdog` and provides a UNIX domain socket as an interface for clients or command-line utilities.
@@ -43,10 +71,8 @@ Usage: wd-broker [OPTIONS]
 Options:
   --help                    Show this help message and exit
   --version                 Show version information and exit
+  --config-file <file>      Load configuration from file (default: /${sysconfdir}/wd-broker.conf)
   --daemonize               Run as a daemon (default: false)
-  --wd-timeout <seconds>    Set hardware watchdog timeout (default: 10 seconds)
-                            Must be between 10 and 60 seconds
-  --socket-path <path>      Set the Unix domain socket path (default: /run/wd-broker.sock)
   --service-user <user>     Set the service user to drop privileges to (default: wd-broker)
                             ATTENTION: Must not be 'root'
   --syslog-facility <name>  Set syslog facility when running as a daemon
@@ -55,10 +81,10 @@ Options:
   --no-watchdog             Disable hardware watchdog (test mode, default: false)
 
 Examples:
-  wd-broker --wd-timeout 15 --socket-path /run/your-own.sock
-  wd-broker --daemonize --service-user youruser
+  wd-broker --no-watchdog --config-file /tmp/test-config
+  wd-broker --daemonize
 ```
-You may need to add a dedicated service user and the corresponding group:
+You may need to add a dedicated service user, the corresponding group and set the permissions for the config file::
 
 ```bash
 # First create the group
@@ -71,26 +97,61 @@ sudo useradd --system --no-create-home --shell /usr/sbin/nologin \
 
 # You may want to add others or yourself to the new group
 sudo usermod -aG wd-clients <user>
+
+# Set the permissions for the config file
+sudo chown wd-broker:wd-clients /etc/wd-broker.conf
+sudo chmod 640 /etc/wd-broker.conf
 ```
 
-### Short Design Description
+### Configuration file
+
+`wd-broker` can be configured via a configuration file (default location: `/${sysconfdir}/wd-broker.conf`).
+  - `${sysconfdir}` can be controlled via `--sysconfdir` when running `./configure`
+  - Set it to a path of your choice via `./configure --sysconfdir=/usr/local`
+  - If not defined via `./configure` it defaults to `/etc`
+
+You can also provide a custom configuration file location when starting the daemon. Use the `--config-file <path>` command line option.
+
+#### Syntax
+- Within the config file, lines starting with `#` are comments, empty lines are ignored.
+- Options are defined by name-value pairs in the format `option = value`
+- Announced clients are defined in sections starting with `[client <name>]`
+  - Within these sections options per client can be defined.
+  - The given client name shall not contain ']' or exceed 63 characters. Otherwise the broker will reject the config file.
+
+#### Default configuration file template
+The project comes with a default configuration file ([src/wd-broker.conf](src/wd-broker.conf)) including all available options along with comments explaining their purpose. It is automatically installed at `/${sysconfdir}/wd-broker.conf` via `make install`, but permissions and ownership must be set manually.
+
+#### Restrictions
+If `wd-broker`can't find the configuration file when started, it will refuse to start and print an error message. This is to prevent false assumptions about the daemon's behavior. It is also prohibited to use a symbolic link as configuration file. Before using the configuration file, its ownership and permissions are checked. The file must be owned by the configured service user (default: `wd-broker`) and must not be writable by others.
+
+### Announced Clients
+Announced clients are clients that are predefined in the configuration file under `[client <name>]` sections.
+These clients must register with the broker within their specified timeout after the daemon starts.
+If an announced client fails to register in time, the broker will stop feeding the hardware watchdog, causing a system reset.
+
+**Why announced clients?**
+This mechanism ensures that all critical applications are running and responsive after a reboot. If a required client is missing or fails to start, the system will not remain in a potentially unsafe state.
+
+### Short wd-broker design description
 
 This is a short step-by-step description of what the daemon does:
 
 - Parse parameters and validate them.
 - Ensure the service user is not `root`.
+- Check ownership and permissions of the config file, if OK, parse it.
 - Check if the socket path is ready to be used.
 - Create the socket, start listening, and set appropriate permissions.
 - Open `/dev/watchdog` as late as possible, ensuring everything else is ready.
 - Drop privileges to the specified service user.
-- Fork the process and open syslog for logging.
+- Fork the process and open syslog for logging (until now errors are written to stderr).
 - Enter the main loop:
   - Wait in `select()` for client messages, the timer to feed the watchdog, or a timeout.
   - Process client messages if any are received.
-  - Check if any registered client has timed out.
+  - Check if any registered or announced client has timed out.
   - Feed the watchdog if it is time to do so.
   - Repeat until the process is killed or a client timeout occurs.
-- If a client timeout occurs, enter an infinite loop (`while(1)`) and wait for the system reset.
+- If a client timeout occurs (registered or announced client), enter an infinite loop (`while(1)`) and wait for the system reset.
 - If no client timeout occurs, attempt to stop the watchdog (if supported by the system).
 - Close the socket and exit.
 
@@ -163,7 +224,7 @@ The wd-client library does not perform any internal logging via syslog() or stde
 
 This approach follows a “caller is in control” philosophy:
 * Minimal side effects: No implicit logging or output, making the library easy to handle.
-* Structured diagnostics: Use the return value as first indication, write logs just in case of a error. The status message is valid until the next operation.
+* Structured diagnostics: Use the return value as first indication, write logs just in case of an error. The status message is valid until the next operation.
 * Flexible integration: Callers may decide how and when to forward error messages (e.g. printf(), syslog(), journal, log file, etc.).
 
 ### Basic Usage
@@ -214,7 +275,7 @@ int main(void) {
 
     while (functional && stay_alive) {
         // Feed the broker with a heartbeat as long as your application is doing its job.
-        // This is not just about process liveness – it's about functional correctness.
+        // This is not just about process liveness – it is about functional correctness.
         if (wd_client_ping(&client) != WD_CLIENT_OK) {
             // This should never happen under normal conditions.
             // If ping fails, wd-broker will stop feeding the hardware watchdog, triggering a reboot.
@@ -225,7 +286,7 @@ int main(void) {
         // Sleep for 5 seconds.
         // Choose this delay carefully – your ping interval must always stay within the timeout window.
         // Consider jitter, load spikes, or scheduler delays on the system.
-        // Note that wd-broker or libwd-client do not add margins as every use case has it's own needs.
+        // Note that wd-broker or libwd-client do not add margins as every use case has its own needs.
         usleep(5000 * 1000);
     }
 
@@ -242,101 +303,7 @@ See [include/wd-client.h](include/wd-client.h) for full API documentation.
 
 ## Protocol
 
-Clients communicate with the broker via a Unix domain socket (default: `/run/wd-broker.sock`).
-The protocol is simple and line-based. Each connection handles exactly **one command**, and is then closed by the broker.
-
-**General Rules:**
-
-* Commands are case-sensitive.
-* Maximum command length: 127 characters.
-* Commands **must be terminated with `\n` (newline)**.
-* Trailing newlines are ignored.
-* Up to 64 clients can be registered concurrently.
-* Commands are processed synchronously per connection.
-
-#### REGISTER `<name>` `<timeout_ms>` `[ignorepid]`
-
-Registers a new client.
-
-* `name`: Printable ASCII string, max 63 characters, no spaces.
-* `timeout_ms`: Integer between 5000 and 300000 (5s to 5min).
-* Optional third argument `ignorepid` disables PID checking for this client.
-* Response: `OK <clientID>` or `ERROR <reason>`
-* `clientID` is a unique 16-character lowercase hex string assigned by the broker.
-
-Example:
-
-```
-REGISTER sensorA 15000\n
-→ OK a4b7c8e912d0fc13
-
-REGISTER testtool 10000 ignorepid\n
-→ OK 7c6b7f3e91ab8d24
-```
-
-#### PING `<clientID>`
-
-Renews the client's heartbeat.
-
-* The client's PID must match the PID stored during registration unless `ignorepid` was used.
-* Response: `OK`, `ERROR wrong PID`, `ERROR unknown clientID`, or syntax-related error.
-
-Example:
-
-```
-PING a4b7c8e912d0fc13\n
-→ OK
-```
-
-#### UNREGISTER `<clientID>`
-
-Removes a client from the active list.
-
-* PID validation is enforced unless `ignorepid` was used.
-* Response: `OK` or `ERROR <reason>`
-
-Example:
-
-```
-UNREGISTER a4b7c8e912d0fc13\n
-→ OK
-```
-
-#### STATUS
-
-Returns system-level information and all active clients.
-
-* Only allowed if the calling process is root.
-* Response includes multiple lines in the following format:
-
-  * `daemon_version=<version>`
-  * `protocol_version=<version>`
-  * `wd_timeout_s=<timeout>`
-  * `active_clients=<count>`
-  * One line per active client: `<clientID> <pid> <name> <timeout_ms> <pidCheck>`
-
-Example:
-
-```
-STATUS\n
-→ daemon_version=0.28.0
-→ protocol_version=0.1
-→ wd_timeout_s=10
-→ active_clients=2
-→ 4f3c0d9e8a1b4f21 1234 watchdogd 10000 0
-→ 1a2b3c4d5e6f7g89 4321 sensorX 30000 1
-```
-
-#### VERSION
-
-Returns the version information of the daemon and protocol.
-
-* May be called by any client (no special privileges required).
-* Response includes two lines in the following format:
-
-  * `daemon_version=<version>`
-  * `protocol_version=<version>`
-* No additional arguments are allowed.
+The protocol is simple and line-based, using a Unix domain socket for communication. The broker listens on a socket, and clients can connect to it to send commands. See [Protocol Documentation](doc/Protocol.md) for a detailed description of the protocol.
 
 ## Notes and Limitations
 
@@ -350,7 +317,7 @@ Returns the version information of the daemon and protocol.
 
 ## Testing
 
-`wd-broker` comes with a set of tests along with a minimalistic test framework build to run them on the embedded build target. To learn more, see [Testing Guide](doc/Tests.md).
+`wd-broker` comes with a set of tests along with a minimalistic test framework. To learn more, see [Testing Guide](doc/Tests.md).
 
 ## License
 

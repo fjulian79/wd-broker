@@ -26,7 +26,7 @@ import socket
 import re
 
 def valid(label, cmd, expect="OK"):
-    reply = send_socket_command(cmd, SOCKET_PATH)
+    reply = send_socket_command(cmd)
     lines = set(line.strip() for line in reply.splitlines())
 
     expected = {

@@ -55,6 +55,7 @@
 
 #define STR_HELPER(x)              #x
 #define STR(x)                     STR_HELPER(x)
+#define DEFAULT_CONFIG_PATH        SYSCONFDIR "/wd-broker.conf"
 #define WD_HW_TIMEOUT_DEFAULT_S    10
 #define WD_HW_TIMEOUT_MIN_S        WD_HW_TIMEOUT_DEFAULT_S
 #define WD_HW_TIMEOUT_MAX_S        60
@@ -74,14 +75,13 @@ typedef struct {
     unsigned int    timeout_ms;
     struct timespec last_ping;
     bool            active;
+    bool            anounced;
     bool            checkPID;
 } client_t;
 
 typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN];
     int  wd_timeout_s;
-    char service_user[LOGIN_NAME_MAX];
-    int  syslog_facility;
 } wd_config_t;
 
 wd_config_t   config;
@@ -94,12 +94,8 @@ void print_help(void) {
     printf("  --help                    Show this help message and exit\n");
     printf("  --version                 Show version information and exit\n");
     printf("  --daemonize               Run as a daemon (default: false)\n");
-    printf("  --wd-timeout <seconds>    Set hardware watchdog timeout (default: %d seconds)\n",
-           WD_HW_TIMEOUT_DEFAULT_S);
-    printf("                            Must be between %d and %d seconds\n", WD_HW_TIMEOUT_MIN_S,
-           WD_HW_TIMEOUT_MAX_S);
-    printf("  --socket-path <path>      Set the Unix domain socket path (default: %s)\n",
-           SOCKET_PATH_DEFAULT);
+    printf("  --config-file <file>      Load configuration from file (default: %s)\n",
+           DEFAULT_CONFIG_PATH);
     printf("  --service-user <user>     Set the service user to drop privileges to (default: %s)\n",
            SERVICE_USER_DEFAULT);
     printf("                            ATTENTION: Must not be 'root'\n");
@@ -108,8 +104,8 @@ void print_help(void) {
     printf("                            LOG_LOCAL0 through LOG_LOCAL7\n");
     printf("  --no-watchdog             Disable hardware watchdog (test mode, default: false)\n");
     printf("\nExamples:\n");
-    printf("  wd-broker --wd-timeout 15 --socket-path /run/your-own.sock\n");
-    printf("  wd-broker --daemonize --service-user youruser\n");
+    printf("  wd-broker --no-watchdog --config /tmp/test-config\n");
+    printf("  wd-broker --daemonize\n");
     printf("\n");
 }
 
@@ -170,6 +166,15 @@ void log_message(int priority, const char *fmt, ...) {
     va_end(ap);
 }
 
+static char *trim(char *str) {
+    while (isspace(*str))
+        str++;
+    char *end = str + strlen(str) - 1;
+    while (end > str && isspace(*end))
+        *end-- = '\0';
+    return str;
+}
+
 int parse_syslog_facility(const char *str) {
     if (str == NULL) {
         return LOG_DAEMON;
@@ -205,6 +210,97 @@ int parse_syslog_facility(const char *str) {
 
 void get_now(struct timespec *ts) {
     clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
+void parse_config(const char *filename, client_t *clients, size_t max_clients) {
+    FILE *f = fopen(filename, "r");
+    char  line[256] = {0};
+    char  key[64] = {0};
+    char  val[128] = {0};
+    char  name[WD_CLIENT_NAME_LEN] = {0};
+    int   client_idx = -1;
+    int   line_num = 0;
+
+    if (f == NULL) {
+        fatal_error("Failed to open %s", filename);
+    }
+
+    /* Reset the client array, it will be filled with the announced clients
+     * given by the config file starting at index 0. The rest of the array
+     * will be used for clients that register unexpected. */
+    memset(clients, 0, sizeof(client_t) * max_clients);
+
+    /* Initialize config with default values to be save */
+    memset(&config, 0, sizeof(config));
+    strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
+    config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
+
+    /* Read the config file line by line. Be strict about the format. Abbort in case of any error to
+     * raise awareness. */
+    while (fgets(line, sizeof(line), f)) {
+        char *trimmed = trim(line);
+        line_num++;
+
+        /* Skip empty lines and comments */
+        if (*trimmed == '#' || *trimmed == '\0') {
+            continue;
+        }
+
+        /* Check for key-value pairs */
+        if (sscanf(trimmed, "%63[^=]=%127[^\n]", key, val) == 2) {
+            char *t_key = trim(key);
+            char *t_val = trim(val);
+
+            if (strcmp(t_key, "socket_path") == 0) {
+                strncpy(config.socket_path, t_val, sizeof(config.socket_path) - 1);
+            } else if (strcmp(t_key, "wd_timeout_s") == 0) {
+                config.wd_timeout_s = atoi(t_val);
+            } else if (strcmp(t_key, "timeout") == 0) {
+                if (client_idx == -1) {
+                    fclose(f);
+                    fatal_error("Timeout must be set in a client section");
+                }
+                clients[client_idx].timeout_ms = atoi(t_val);
+                if (clients[client_idx].timeout_ms < WD_CLIENT_TIMEOUT_MIN_MS ||
+                    clients[client_idx].timeout_ms > WD_CLIENT_TIMEOUT_MAX_MS) {
+                    fclose(f);
+                    fatal_error("Timeout must be between %d and %d ms", WD_CLIENT_TIMEOUT_MIN_MS,
+                                WD_CLIENT_TIMEOUT_MAX_MS);
+                }
+            } else {
+                /* Catch all unknown keys */
+                fclose(f);
+                fatal_error("Unknown config key '%s' in line %d", t_key, line_num);
+            }
+            continue;
+        }
+
+        /* Check for client section */
+        if (sscanf(trimmed, "[client %63[^]]", name) == 1) {
+            if (client_idx == max_clients - 1) {
+                fclose(f);
+                fatal_error("Too many clients defined in %s", filename);
+            }
+            if (strlen(trimmed) - strlen(name) > strlen("[client ]")) {
+                fclose(f);
+                fatal_error("Invalid client name used in line %d", line_num);
+            }
+            client_idx++;
+            strncpy(clients[client_idx].name, name, sizeof(clients[client_idx].name));
+            /* Assume no further specs and set defaults */
+            clients[client_idx].timeout_ms = 5 * 60 * 1000; // 5 minutes
+            clients[client_idx].anounced = true;
+            clients[client_idx].active = false;
+            get_now(&clients[client_idx].last_ping);
+            continue;
+        }
+
+        /* If this point is reached, the line is not valid, assume a broken config file */
+        fclose(f);
+        fatal_error("Invalid config in line: %d: %s\n", line_num, trimmed);
+    }
+
+    fclose(f);
 }
 
 void make_clientID(char *clientID_out) {
@@ -364,7 +460,12 @@ void handle_command(int client_sock, client_t *clients) {
 
         /* Register the client */
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
-            if (!clients[i].active) {
+            /* Check if the maches for a anounced client OR if we have found a free slot.
+             * Can be that simple as the range of expected clients starts at 0 and has been
+             * intialized at program start. */
+            if ((!clients[i].active && !clients[i].anounced) ||
+                (clients[i].anounced && strcmp(clients[i].name, name) == 0)) {
+                /* The announced flag is only used for the first regestration */
                 clients[i].active = true;
                 strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
                 clients[i].pid = creds.pid;
@@ -372,12 +473,13 @@ void handle_command(int client_sock, client_t *clients) {
                 clients[i].timeout_ms = tmp_timeout;
                 get_now(&clients[i].last_ping);
                 make_clientID(clients[i].clientID);
-                log_message(
-                    LOG_INFO,
-                    "Client '%s' (PID %d) registered (timeout %d ms, pidCheck %s, clientID %s)",
-                    clients[i].name, (int)clients[i].pid, clients[i].timeout_ms,
-                    checkPID ? "enabled" : "disabled", clients[i].clientID);
+                log_message(LOG_INFO,
+                            "%s '%s' (PID %d) registered (timeout %d ms, pidCheck %s, clientID %s)",
+                            clients[i].anounced ? "Announced client" : "Client", clients[i].name,
+                            (int)clients[i].pid, clients[i].timeout_ms,
+                            checkPID ? "enabled" : "disabled", clients[i].clientID);
                 write_str(client_sock, "OK %s\n", clients[i].clientID);
+                clients[i].anounced = false;
                 return;
             }
         }
@@ -525,30 +627,29 @@ int main(int argc, char *argv[]) {
     struct stat        st;
     int                timer_fd = timerfd_create(CLOCK_MONOTONIC, 0);
     struct itimerspec  timer_spec = {0};
+    int                syslog_facility = LOG_DAEMON;
+    char              *service_user = SERVICE_USER_DEFAULT;
     bool               started_as_root = geteuid() == 0 ? true : false;
+    char              *config_file = DEFAULT_CONFIG_PATH;
+    struct passwd     *pw = NULL;
 
     static struct option long_options[] = {
         {"daemonize", no_argument, 0, 'd'},
+        {"config-file", required_argument, 0, 'c'},
         {"help", no_argument, 0, 'h'},
         {"no-watchdog", no_argument, 0, 'n'},
         {"service-user", required_argument, 0, 'u'},
-        {"socket-path", required_argument, 0, 'p'},
         {"syslog-facility", required_argument, 0, 's'},
-        {"wd-timeout", required_argument, 0, 't'},
         {"version", no_argument, 0, 'v'},
         {0, 0, 0, 0},
     };
     int opt;
 
-    /* Initialize config with default values to be save */
-    memset(&config, 0, sizeof(config));
-    strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
-    strncpy(config.service_user, SERVICE_USER_DEFAULT, sizeof(config.service_user));
-    config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
-    config.syslog_facility = LOG_DAEMON;
-
     while ((opt = getopt_long(argc, argv, "hv", long_options, NULL)) != -1) {
         switch (opt) {
+            case 'c':
+                config_file = optarg;
+                break;
             case 'd':
                 daemonize = true;
                 break;
@@ -558,17 +659,10 @@ int main(int argc, char *argv[]) {
             case 'n':
                 watchdog_enabled = false;
                 break;
-            case 'p':
-                strncpy(config.socket_path, optarg, sizeof(config.socket_path) - 1);
-                break;
             case 's':
-                config.syslog_facility = parse_syslog_facility(optarg);
-                break;
-            case 't':
-                config.wd_timeout_s = atoi(optarg);
-                break;
+                syslog_facility = parse_syslog_facility(optarg);
             case 'u':
-                strncpy(config.service_user, optarg, sizeof(config.service_user) - 1);
+                service_user = optarg;
                 break;
             case 'v':
                 printf("wd-broker v%s\n", PACKAGE_VERSION);
@@ -578,6 +672,36 @@ int main(int argc, char *argv[]) {
                 return EXIT_FAILURE;
         }
     }
+
+    /* Check the given service user and the permissions of the config file */
+    pw = getpwnam(service_user);
+    if (strlen(service_user) == 0 || strlen(service_user) > LOGIN_NAME_MAX) {
+        fatal_error("Invalid service user name '%s'.\n", service_user);
+    }
+    if (!pw) {
+        fatal_error("Service user '%s' does not exist.\n", service_user);
+    }
+    if (pw->pw_uid == 0) {
+        fatal_error("Refusing to drop privileges to root, use a different service user.\n");
+    }
+    if (lstat(config_file, &st) != 0) {
+        fatal_error("Cannot stat config file '%s': %s", config_file, strerror(errno));
+    }
+    if (!S_ISREG(st.st_mode)) {
+        fatal_error("Config file '%s' is not a regular file", config_file);
+    }
+    if (S_ISLNK(st.st_mode)) {
+        fatal_error("Config file '%s' must not be a symlink", config_file);
+    }
+    if (st.st_uid != pw->pw_uid) {
+        fatal_error("Config file '%s' must be owned by '%s' (uid %d)\n", config_file, service_user,
+                    pw->pw_uid);
+    }
+    if ((st.st_mode & 022) != 0) {
+        fatal_error("Config file '%s' must not be writable by group or others", config_file);
+    }
+
+    parse_config(config_file, clients, WD_MAX_CLIENTS);
 
     if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S || config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
         fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
@@ -591,14 +715,6 @@ int main(int argc, char *argv[]) {
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
         fatal_errno("timerfd_settime failed");
-    }
-
-    struct passwd *pw = getpwnam(config.service_user);
-    if (!pw) {
-        fatal_error("Service user '%s' does not exist.\n", config.service_user);
-    }
-    if (pw->pw_uid == 0) {
-        fatal_error("Refusing to drop privileges to root, use a different service user.\n");
     }
 
     /* Do not trust the given socket path, check if it is a socket and remove it if it is */
@@ -715,12 +831,20 @@ int main(int argc, char *argv[]) {
         fclose(stdin);
         fclose(stdout);
         fclose(stderr);
-        openlog("wd-broker", LOG_PID | LOG_NDELAY, config.syslog_facility);
+        openlog("wd-broker", LOG_PID | LOG_NDELAY, syslog_facility);
     }
 
     log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION,
                 config.socket_path);
     log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
+    for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
+        if (clients[i].anounced) {
+            log_message(LOG_INFO, "Client '%s' announced, expected within %d ms", clients[i].name,
+                        clients[i].timeout_ms);
+        } else {
+            break;
+        }
+    }
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -756,14 +880,20 @@ int main(int argc, char *argv[]) {
 
             /* Check if any client has missed a heartbeat */
             for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
-                if (clients[i].active) {
+                /* Check if the client is active or has been anounced but not yet registered */
+                if (clients[i].active || clients[i].anounced) {
                     unsigned int age = ms_since(&clients[i].last_ping);
                     if (age > clients[i].timeout_ms) {
-                        log_message(LOG_ALERT,
-                                    "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u "
-                                    "ms > %d ms)",
-                                    clients[i].name, (int)clients[i].pid, clients[i].clientID, age,
-                                    clients[i].timeout_ms);
+                        if (clients[i].active) {
+                            log_message(LOG_ALERT,
+                                        "Client '%s' (PID %d, clientID=%s) missed heartbeat (%u ms "
+                                        "> %d ms)",
+                                        clients[i].name, (int)clients[i].pid, clients[i].clientID,
+                                        age, clients[i].timeout_ms);
+                        } else {
+                            log_message(LOG_WARNING, "Client '%s' not registered within %u ms",
+                                        clients[i].name, clients[i].timeout_ms);
+                        }
                         all_ok = false;
                         break;
                     }

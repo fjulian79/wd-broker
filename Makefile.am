@@ -17,5 +17,4 @@
 # Source repository: https://github.com/fjulian79/wd-broker
 
 SUBDIRS = include src
-
-dist_testdir = wd-broker-test
+EXTRA_DIST = $(sysconf_DATA) 

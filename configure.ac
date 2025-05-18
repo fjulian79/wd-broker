@@ -16,12 +16,18 @@ dnl limitations under the License.
 dnl
 dnl Source repository: https://github.com/fjulian79/wd-broker
 
-AC_INIT([wd-broker], [1.0.0], [https://github.com/fjulian79/wd-broker/issues])
+AC_INIT([wd-broker], [2.0.0-rc1], [https://github.com/fjulian79/wd-broker/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
 LT_INIT
 AM_PROG_AR
 AC_PROG_CC
+
+if test "x$sysconfdir" = 'x${prefix}/etc'; then
+  AC_MSG_NOTICE([sysconfdir set to '/etc', use ./configure --sysconfdir=<path> to define something else])
+  sysconfdir='/etc'
+fi
+AC_DEFINE_UNQUOTED([SYSCONFDIR], ["$sysconfdir"], [Path for system wide configurations])
 
 AC_ARG_WITH([socket-path],
     AS_HELP_STRING([--with-socket-path=PATH], [default Unix domain socket path]),
@@ -44,7 +50,6 @@ AC_ARG_WITH([max-clients],
 )
 AC_DEFINE_UNQUOTED(WD_MAX_CLIENTS, [$max_clients], [Maximum number of simultaneous clients])
 
-AC_PROG_CC
 CFLAGS="$CFLAGS -Wall -Werror"
 
 AC_CONFIG_HEADERS([config.h])

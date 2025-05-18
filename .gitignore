@@ -13,12 +13,13 @@
 *.d
 
 # Build output
-wd-broker*
+wd-broker
 wd-ctrl
 wd-client-test
 src/.dirstamp
 src/.deps/
 constants.py
+wd-broker.tar.gz
 
 # Autotools generated files
 Makefile

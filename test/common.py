@@ -33,10 +33,10 @@ import tempfile
 import threading
 import time
 
-SOCKET_PATH = "/tmp/wd-broker-test.sock"
 DEFAULT_TIMEOUT = WD_CLIENT_TIMEOUT_MIN_MS * 2
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TEST_BINARY = "wd-broker" #"os.path.join(SCRIPT_DIR, "wd-broker")
+DEFAULT_CONFIG = "cfg/default.conf"
+TEST_BINARY = "wd-broker"
 
 def log(level, *args):
     valid_levels = {"DEBUG", "INFO", "STEP", "ERROR"}
@@ -57,6 +57,14 @@ def log_step(msg):
 def log_error(msg):  
     log("ERROR", msg)
 
+class SocketPath:
+    """
+    Global class to manage the currently used socket path.
+    """
+    value = ""
+
+SOCKET_PATH = SocketPath()
+
 class TestBroker:
     """
     Manages the lifecycle of a wd-broker instance in test mode.
@@ -72,15 +80,29 @@ class TestBroker:
         self._log_thread = None
         self._log_lock = threading.Lock()
 
-    def start(self, expect="OK"):
+    def start(self, config=None ,expect="OK"):
+        if config is None:
+            config = os.path.join(SCRIPT_DIR, DEFAULT_CONFIG)
+        else:
+            config = os.path.join(SCRIPT_DIR, config)
+        if not os.path.exists(config):
+            raise FileNotFoundError(config)
         if self.started:
             raise RuntimeError("Broker already started")
-
-        print("Starting broker with PTY...")
+    
+        # get the socket path from the config file
+        with open(config, "r") as f:
+            for line in f:
+                if line.startswith("socket_path"):
+                    SOCKET_PATH.value = line.split("=")[1].strip()
+                    break
+            else:
+                raise ValueError("No socket path found in config file")
+        print("Starting broker with config:", config)
+        print("Socket path:", SOCKET_PATH.value)
         master_fd, slave_fd = pty.openpty()
-
         self.proc = subprocess.Popen(
-            [TEST_BINARY, "--no-watchdog", "--socket-path", SOCKET_PATH],
+            [TEST_BINARY, "--no-watchdog", "--config-file", config],
             stdin=subprocess.DEVNULL,
             stdout=slave_fd,
             stderr=subprocess.STDOUT,
@@ -206,16 +228,20 @@ def unregister(clientID, name=None, expect="OK"):
         label = f"UNREGISTER {clientID}"
     check_cmd(label, f"UNREGISTER {clientID}\n", expect=expect)
 
-def send_socket_command(cmd, socket_path, timeout_s=30):
+def send_socket_command(cmd, socket_path=None, timeout_s=30):
+    if socket_path is None:
+        socket_path = SOCKET_PATH.value
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as sock:
         sock.settimeout(timeout_s)
         sock.connect(socket_path)
         sock.sendall(cmd.encode())
         return sock.recv(1024).decode().strip()
 
-def check_cmd(label, cmd, expect=None, timeout_s=30, shall_fail=False):
+def check_cmd(label, cmd, socket_path=None, expect=None, timeout_s=30, shall_fail=False):
+    if socket_path is None:
+        socket_path = SOCKET_PATH.value
     try:
-        reply = send_socket_command(cmd, SOCKET_PATH, timeout_s)
+        reply = send_socket_command(cmd, socket_path, timeout_s)
         status = reply.split()[0] if reply else ""
         if expect and status != expect:
             fail(f"{label}: expected '{expect}', got: '{status}' (full reply: '{reply}')")

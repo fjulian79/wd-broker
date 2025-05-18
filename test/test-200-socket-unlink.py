@@ -31,11 +31,15 @@ import time
 
 from common import *
 
-def create_regular_file(path=SOCKET_PATH):
+def create_regular_file(path=None):
+    if path is None:
+        path = SOCKET_PATH.value
     with open(path, "w") as f:
         f.write("not a socket")
 
-def create_active_socket(path=SOCKET_PATH):
+def create_active_socket(path=None):
+    if path is None:
+        path = SOCKET_PATH.value
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     try:
         os.unlink(path)
@@ -45,7 +49,9 @@ def create_active_socket(path=SOCKET_PATH):
     sock.listen(1)
     return sock
 
-def create_stale_socket(path=SOCKET_PATH):
+def create_stale_socket(path=None):
+    if path is None:
+        path = SOCKET_PATH.value
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     try:
         os.unlink(path)
@@ -54,7 +60,9 @@ def create_stale_socket(path=SOCKET_PATH):
     sock.bind(path)
     sock.close()
 
-def clean_up(path=SOCKET_PATH):
+def clean_up(path=None):
+    if path is None:
+        path = SOCKET_PATH.value
     try:
         os.unlink(path)
     except FileNotFoundError:
