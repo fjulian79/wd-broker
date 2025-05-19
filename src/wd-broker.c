@@ -69,7 +69,7 @@
 #define WD_CLIENT_NOT_FOUND        -2
 
 typedef struct {
-    int flag;
+    int         flag;
     const char *name;
 } BootFlag;
 
@@ -87,6 +87,8 @@ typedef struct {
 typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN];
     int  wd_timeout_s;
+    bool strict_clients;
+    bool unique_clients;
 } wd_config_t;
 
 static const BootFlag bootflags[] = {
@@ -223,116 +225,6 @@ int parse_syslog_facility(const char *str) {
     exit(EXIT_FAILURE);
 }
 
-void get_now(struct timespec *ts) {
-    clock_gettime(CLOCK_MONOTONIC, ts);
-}
-
-void parse_config(const char *filename, client_t *clients, size_t max_clients) {
-    FILE *f = fopen(filename, "r");
-    char  line[256] = {0};
-    char  key[64] = {0};
-    char  val[128] = {0};
-    char  name[WD_CLIENT_NAME_LEN] = {0};
-    int   client_idx = -1;
-    int   line_num = 0;
-
-    if (f == NULL) {
-        fatal_error("Failed to open %s", filename);
-    }
-
-    /* Reset the client array, it will be filled with the announced clients
-     * given by the config file starting at index 0. The rest of the array
-     * will be used for clients that register unexpected. */
-    memset(clients, 0, sizeof(client_t) * max_clients);
-
-    /* Initialize config with default values to be save */
-    memset(&config, 0, sizeof(config));
-    strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
-    config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
-
-    /* Read the config file line by line. Be strict about the format. Abbort in case of any error to
-     * raise awareness. */
-    while (fgets(line, sizeof(line), f)) {
-        char *trimmed = trim(line);
-        line_num++;
-
-        /* Skip empty lines and comments */
-        if (*trimmed == '#' || *trimmed == '\0') {
-            continue;
-        }
-
-        /* Check for key-value pairs */
-        if (sscanf(trimmed, "%63[^=]=%127[^\n]", key, val) == 2) {
-            char *t_key = trim(key);
-            char *t_val = trim(val);
-
-            if (strcmp(t_key, "socket_path") == 0) {
-                strncpy(config.socket_path, t_val, sizeof(config.socket_path) - 1);
-            } else if (strcmp(t_key, "wd_timeout_s") == 0) {
-                config.wd_timeout_s = atoi(t_val);
-            } else if (strcmp(t_key, "timeout") == 0) {
-                if (client_idx == -1) {
-                    fclose(f);
-                    fatal_error("Timeout must be set in a client section");
-                }
-                clients[client_idx].timeout_ms = atoi(t_val);
-                if (clients[client_idx].timeout_ms < WD_CLIENT_TIMEOUT_MIN_MS ||
-                    clients[client_idx].timeout_ms > WD_CLIENT_TIMEOUT_MAX_MS) {
-                    fclose(f);
-                    fatal_error("Timeout must be between %d and %d ms", WD_CLIENT_TIMEOUT_MIN_MS,
-                                WD_CLIENT_TIMEOUT_MAX_MS);
-                }
-            } else {
-                /* Catch all unknown keys */
-                fclose(f);
-                fatal_error("Unknown config key '%s' in line %d", t_key, line_num);
-            }
-            continue;
-        }
-
-        /* Check for client section */
-        if (sscanf(trimmed, "[client %63[^]]", name) == 1) {
-            if (client_idx == max_clients - 1) {
-                fclose(f);
-                fatal_error("Too many clients defined in %s", filename);
-            }
-            if (strlen(trimmed) - strlen(name) > strlen("[client ]")) {
-                fclose(f);
-                fatal_error("Invalid client name used in line %d", line_num);
-            }
-            client_idx++;
-            strncpy(clients[client_idx].name, name, sizeof(clients[client_idx].name));
-            /* Assume no further specs and set defaults */
-            clients[client_idx].timeout_ms = 5 * 60 * 1000; // 5 minutes
-            clients[client_idx].anounced = true;
-            clients[client_idx].active = false;
-            get_now(&clients[client_idx].last_ping);
-            continue;
-        }
-
-        /* If this point is reached, the line is not valid, assume a broken config file */
-        fclose(f);
-        fatal_error("Invalid config in line: %d: %s\n", line_num, trimmed);
-    }
-
-    fclose(f);
-}
-
-void log_bootstatus(int bootstatus) {
-    char flags[128] = {0};
-    for (size_t i = 0; i < sizeof(bootflags)/sizeof(bootflags[0]); ++i) {
-        if (bootstatus & bootflags[i].flag) {
-            strncat(flags, bootflags[i].name, sizeof(flags) - strlen(flags) - 1);
-        }
-    }
-
-    if (strlen(flags) == 0) {
-        strncat(flags, " none", sizeof(flags) - 1);
-    }
-
-    log_message(LOG_INFO, "Boot status 0x%08x:%s", bootstatus, flags);
-}
-
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
     size_t            raw[WD_CLIENTID_LEN - 1];
@@ -367,6 +259,163 @@ void make_clientID(char *clientID_out) {
     }
 
     clientID_out[WD_CLIENTID_LEN - 1] = '\0';
+}
+
+void get_now(struct timespec *ts) {
+    clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
+void parse_config(const char *filename, client_t *clients, size_t max_clients) {
+    FILE *f = fopen(filename, "r");
+    char  line[256] = {0};
+    char  key[64] = {0};
+    char  val[128] = {0};
+    char  name[WD_CLIENT_NAME_LEN] = {0};
+    int   client_idx = -1;
+    int   line_num = 0;
+
+    if (f == NULL) {
+        fatal_error("Failed to open %s", filename);
+    }
+
+    /* Reset the client array, it will be filled with the announced clients
+     * given by the config file starting at index 0. The rest of the array
+     * will be used for clients that register unexpected. */
+    memset(clients, 0, sizeof(client_t) * max_clients);
+
+    /* Initialize config with default values to be save */
+    memset(&config, 0, sizeof(config));
+    strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
+    config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
+    config.strict_clients = false;
+    config.unique_clients = false;
+
+    /* Read the config file line by line. Be strict about the format. Abbort in case of any error to
+     * raise awareness. */
+    while (fgets(line, sizeof(line), f)) {
+        char *trimmed = trim(line);
+        line_num++;
+
+        /* Skip empty lines and comments */
+        if (*trimmed == '#' || *trimmed == '\0') {
+            continue;
+        }
+
+        /* Check for key-value pairs */
+        if (sscanf(trimmed, "%63[^=]=%127[^\n]", key, val) == 2) {
+            char *t_key = trim(key);
+            char *t_val = trim(val);
+
+            if (strcmp(t_key, "socket_path") == 0) {
+                strncpy(config.socket_path, t_val, sizeof(config.socket_path) - 1);
+            } else if (strcmp(t_key, "wd_timeout_s") == 0) {
+                config.wd_timeout_s = atoi(t_val);
+            } else if (strcmp(t_key, "strict_clients") == 0) {
+                if (strcmp(t_val, "true") == 0) {
+                    config.strict_clients = true;
+                } else if (strcmp(t_val, "false") == 0) {
+                    config.strict_clients = false;
+                } else {
+                    fclose(f);
+                    fatal_error("Invalid value for strict_clients in line %d", line_num);
+                }
+            } else if (strcmp(t_key, "unique_clients") == 0) {
+                if (strcmp(t_val, "true") == 0) {
+                    config.unique_clients = true;
+                } else if (strcmp(t_val, "false") == 0) {
+                    config.unique_clients = false;
+                } else {
+                    fclose(f);
+                    fatal_error("Invalid value for unique_clients in line %d", line_num);
+                }
+            } else if (strcmp(t_key, "timeout_ms") == 0) {
+                if (client_idx == -1) {
+                    fclose(f);
+                    fatal_error("Timeout must be set in a client section");
+                }
+                clients[client_idx].timeout_ms = atoi(t_val);
+                if (clients[client_idx].timeout_ms < WD_CLIENT_TIMEOUT_MIN_MS ||
+                    clients[client_idx].timeout_ms > WD_CLIENT_TIMEOUT_MAX_MS) {
+                    fclose(f);
+                    fatal_error("Timeout must be between %d and %d ms", WD_CLIENT_TIMEOUT_MIN_MS,
+                                WD_CLIENT_TIMEOUT_MAX_MS);
+                }
+            } else {
+                /* Catch all unknown keys */
+                fclose(f);
+                fatal_error("Unknown config key '%s' in line %d", t_key, line_num);
+            }
+            continue;
+        }
+
+        /* Check for client section */
+        if (sscanf(trimmed, "[client %63[^]]", name) == 1) {
+            if (client_idx == max_clients - 1) {
+                fclose(f);
+                fatal_error("Too many clients defined in %s", filename);
+            }
+            if (strlen(trimmed) - strlen(name) > strlen("[client ]")) {
+                fclose(f);
+                fatal_error("Invalid client name used in line %d", line_num);
+            }
+            client_idx++;
+            strncpy(clients[client_idx].name, name, sizeof(clients[client_idx].name));
+            /* Assume no further specs and set defaults */
+            make_clientID(clients[client_idx].clientID);
+            clients[client_idx].timeout_ms = 5 * 60 * 1000; // 5 minutes
+            clients[client_idx].anounced = true;
+            clients[client_idx].active = false;
+            get_now(&clients[client_idx].last_ping);
+            continue;
+        }
+
+        /* If this point is reached, the line is not valid, assume a broken config file */
+        fclose(f);
+        fatal_error("Invalid config in line: %d: %s\n", line_num, trimmed);
+    }
+
+    if (config.strict_clients && client_idx == -1) {
+        fclose(f);
+        fatal_error("No client section found in %s", filename);
+    }
+
+    /* Verify that all announced clients have unique names if unique_clients is enabled.
+     *
+     * This uses a naive O(n²) algorithm. However, the maximum number of clients is limited
+     * (default: 64), and usually not all of them are announced clients. The check is performed only
+     * once at program startup when reading the configuration file. Even on slower embedded
+     * hardware, the runtime impact is considered negligible (well below 5 ms in the worst case).
+     * For this reason, no more complex data structure (e.g., a hash set) is used, in order to keep
+     * the code simple, portable, and easy to maintain. */
+    if (config.unique_clients) {
+        for (size_t i = 0; i < max_clients; ++i) {
+            if (clients[i].anounced) {
+                for (size_t j = i + 1; j < max_clients; ++j) {
+                    if (clients[j].anounced && strcmp(clients[i].name, clients[j].name) == 0) {
+                        fclose(f);
+                        fatal_error("Duplicate client name '%s' in config file", clients[i].name);
+                    }
+                }
+            }
+        }
+    }
+
+    fclose(f);
+}
+
+void log_bootstatus(int bootstatus) {
+    char flags[128] = {0};
+    for (size_t i = 0; i < sizeof(bootflags) / sizeof(bootflags[0]); ++i) {
+        if (bootstatus & bootflags[i].flag) {
+            strncat(flags, bootflags[i].name, sizeof(flags) - strlen(flags) - 1);
+        }
+    }
+
+    if (strlen(flags) == 0) {
+        strncat(flags, " none", sizeof(flags) - 1);
+    }
+
+    log_message(LOG_INFO, "Boot status 0x%08x:%s", bootstatus, flags);
 }
 
 void write_str(int fd, const char *fmt, ...) {
@@ -411,13 +460,81 @@ bool parse_clientID(const char *buf, const char *cmd_prefix, int sock, char *out
     return true;
 }
 
-int32_t get_clientInstance(client_t *clients, const char *clientID, pid_t pid, client_t **client) {
+/* Find a slot for registration of a cient with the given name and pid.
+ * Implement the following logic:
+ *
+ * strict_client = false, unique_client = false
+ * Find a slot where announced is true, active is false and the name matches.
+ * OR a slot where announced and active are false.
+ * If none is found, return null.
+ *
+ * strict_client = true,  unique_client = false
+ * Find a slot where announced is true, active is false and the name matches.
+ * If none is found, return null.
+ *
+ * strict_client = false, unique_client = true
+ * Find a slot where announced is true, active is false and the name matches.
+ * OR a slot where announced and active are false.
+ * If there is any slot where active is true and the name matches, the client can't register.
+ * If none is found, return null.
+ *
+ * strict_client = true,  unique_client = true
+ * Find a slot where announced is true, active is false and the name matches.
+ * If there is any slot where active is true and the name matches, the client can't register.
+ * If none is found, return null.
+ */
+client_t *get_clientInstance_by_name(client_t *clients, const char *name, pid_t pid) {
+    client_t *free_slot = NULL;
+    client_t *announced_slot = NULL;
+
+    // unique_clients: Check if any active client with the same name exists
+    if (config.unique_clients) {
+        for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
+            if (clients[i].active && strcmp(clients[i].name, name) == 0) {
+                log_message(LOG_NOTICE,
+                            "Rejected PID%d with name '%s', name already in use by PID%d", (int)pid,
+                            name, (int)clients[i].pid);
+                return NULL;
+            }
+        }
+    }
+
     for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
-        if (clients[i].active && strncmp(clients[i].clientID, clientID, WD_CLIENTID_FMT_LEN) == 0) {
+        // Find announced, inactive slot with matching name
+        if (clients[i].anounced && !clients[i].active && strcmp(clients[i].name, name) == 0) {
+            announced_slot = &clients[i];
+            break; // Always prefer announced slot if available
+        }
+        // Find first free slot (not announced, not active)
+        if (!clients[i].anounced && !clients[i].active && free_slot == NULL) {
+            free_slot = &clients[i];
+        }
+    }
+
+    if (config.strict_clients) {
+        if (!announced_slot) {
+            log_message(LOG_NOTICE, "Rejected PID%d with name '%s', not announced", (int)pid, name);
+        }
+        return announced_slot;
+    } else {
+        if (announced_slot) {
+            return announced_slot;
+        } else {
+            if (!free_slot) {
+                log_message(LOG_NOTICE, "Rejected PID%d with name '%s', no free slot available",
+                            (int)pid, name);
+            }
+            return free_slot;
+        }
+    }
+}
+
+int32_t get_clientInstance_by_clientID(client_t *clients, const char *clientID, pid_t pid,
+                                       client_t **client) {
+    for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
+        if ((clients[i].active || clients[i].anounced) &&
+            strncmp(clients[i].clientID, clientID, WD_CLIENTID_FMT_LEN) == 0) {
             *client = &clients[i];
-            /* Check if the clientID is registered with a PID the checkPID flag is here for
-             * future use to allow clients to turn of the pid check. But this should be be
-             * allowed only when they register to avoid abuse. */
             if (clients[i].checkPID == false || clients[i].pid == pid) {
                 return WD_CLIENT_IDENTIFIED;
             } else {
@@ -488,34 +605,30 @@ void handle_command(int client_sock, client_t *clients) {
             }
         }
 
-        /* Register the client */
-        for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
-            /* Check if the maches for a anounced client OR if we have found a free slot.
-             * Can be that simple as the range of expected clients starts at 0 and has been
-             * intialized at program start. */
-            if ((!clients[i].active && !clients[i].anounced) ||
-                (clients[i].anounced && strcmp(clients[i].name, name) == 0)) {
-                /* The announced flag is only used for the first regestration */
-                clients[i].active = true;
-                strncpy(clients[i].name, name, sizeof(clients[i].name) - 1);
-                clients[i].pid = creds.pid;
-                clients[i].checkPID = checkPID;
-                clients[i].timeout_ms = tmp_timeout;
-                get_now(&clients[i].last_ping);
-                make_clientID(clients[i].clientID);
-                log_message(LOG_INFO,
-                            "%s '%s' (PID %d) registered (timeout %d ms, pidCheck %s, clientID %s)",
-                            clients[i].anounced ? "Announced client" : "Client", clients[i].name,
-                            (int)clients[i].pid, clients[i].timeout_ms,
-                            checkPID ? "enabled" : "disabled", clients[i].clientID);
-                write_str(client_sock, "OK %s\n", clients[i].clientID);
-                clients[i].anounced = false;
-                return;
+        client_t *pClient = get_clientInstance_by_name(clients, name, creds.pid);
+        if (pClient != NULL) {
+            pClient->active = true;
+            strncpy(pClient->name, name, sizeof(pClient->name));
+            pClient->pid = creds.pid;
+            pClient->checkPID = checkPID;
+            pClient->timeout_ms = tmp_timeout;
+            get_now(&pClient->last_ping);
+            if (!pClient->anounced) {
+                /* announced clients get their clientID while parsing the config file */
+                make_clientID(pClient->clientID);
             }
+            log_message(
+                LOG_INFO, "%s '%s' (PID %d) registered (timeout %d ms, pidCheck %s, clientID %s)",
+                pClient->anounced ? "Announced client" : "Client", pClient->name, (int)pClient->pid,
+                pClient->timeout_ms, checkPID ? "enabled" : "disabled", pClient->clientID);
+            write_str(client_sock, "OK %s\n", pClient->clientID);
+            pClient->anounced = false;
+            return;
         }
 
-        /* If we reach this point, all client slots are taken */
-        write_str(client_sock, "ERROR too many clients\n");
+        /* If we reach this point, the client can't register, shall we tell him why? */
+        write_str(client_sock, "ERROR rejected\n");
+        return;
 
     } else if (strncmp(buf, CMD_PING, strlen(CMD_PING)) == 0) {
         char clientID[WD_CLIENTID_LEN] = {0};
@@ -524,7 +637,7 @@ void handle_command(int client_sock, client_t *clients) {
             return;
         }
 
-        ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
+        ret = get_clientInstance_by_clientID(clients, clientID, creds.pid, &pClient);
         switch (ret) {
             case WD_CLIENT_IDENTIFIED:
                 get_now(&pClient->last_ping);
@@ -547,23 +660,33 @@ void handle_command(int client_sock, client_t *clients) {
             return;
         }
 
-        ret = get_clientInstance(clients, clientID, creds.pid, &pClient);
+        ret = get_clientInstance_by_clientID(clients, clientID, creds.pid, &pClient);
         switch (ret) {
             case WD_CLIENT_IDENTIFIED:
-                log_message(LOG_INFO, "Client '%s' (PID %d) unregistered (clientID=%s)",
-                            pClient->name, (int)pClient->pid, pClient->clientID);
-                pClient->active = false;
-                write_str(client_sock, "OK\n");
-                return;
+                if (config.strict_clients && creds.uid != 0) {
+                    log_message(LOG_WARNING,
+                                "UNREGISTER rejected for client '%s' (PID %d) with clientID %s",
+                                pClient->name, (int)pClient->pid, pClient->clientID);
+                    write_str(client_sock, "ERROR rejected\n");
+                    return;
+                } else {
+                    log_message(LOG_INFO, "Client '%s' (PID %d) unregistered (clientID=%s)",
+                                pClient->name, (int)pClient->pid, pClient->clientID);
+                    pClient->active = false;
+                    pClient->anounced = false;
+                    write_str(client_sock, "OK\n");
+                    return;
+                }
             case WD_CLIENT_PID_MISMATCH:
                 if (creds.uid == 0) {
                     pClient->active = false;
+                    pClient->anounced = false;
                     write_str(client_sock, "OK\n");
                     log_message(LOG_INFO, "Client '%s' (PID %d) unregistered by root (clientID=%s)",
                                 pClient->name, (int)pClient->pid, pClient->clientID);
                     return;
                 } else {
-                    write_str(client_sock, "ERROR wrong PID\n");
+                    write_str(client_sock, "ERROR no permission\n");
                     log_message(LOG_WARNING,
                                 "Client '%s', known as PID %d has sent UNREGISTER from PID %d",
                                 pClient->name, (int)pClient->pid, (int)creds.pid);
@@ -597,6 +720,10 @@ void handle_command(int client_sock, client_t *clients) {
                            SOCKET_PROT_VERSION);
         offset +=
             snprintf(msg + offset, sizeof(msg) - offset, "wd_timeout_s=%d\n", config.wd_timeout_s);
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "strict_clients=%s\n",
+                           config.strict_clients ? "true" : "false");
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "unique_clients=%s\n",
+                           config.unique_clients ? "true" : "false");
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active) {
                 active_clients++;
@@ -605,7 +732,7 @@ void handle_command(int client_sock, client_t *clients) {
         offset +=
             snprintf(msg + offset, sizeof(msg) - offset, "active_clients=%ld\n", active_clients);
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
-            if (clients[i].active) {
+            if (clients[i].active || clients[i].anounced) {
                 offset += snprintf(msg + offset, sizeof(msg) - offset, "%s %d %s %u %d\n",
                                    clients[i].clientID, (int)clients[i].pid, clients[i].name,
                                    clients[i].timeout_ms, clients[i].checkPID ? 1 : 0);
@@ -866,14 +993,14 @@ int main(int argc, char *argv[]) {
 
     log_message(LOG_NOTICE, "wd-broker v%s started on socket %s", PACKAGE_VERSION,
                 config.socket_path);
-    if(watchdog_fd != -1) {
+    if (watchdog_fd != -1) {
         int bootstatus = 0;
         log_message(LOG_INFO, "Opened hardware watchdog device /dev/watchdog");
         log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
         if (ioctl(watchdog_fd, WDIOC_GETBOOTSTATUS, &bootstatus) == -1) {
             log_message(LOG_ERR, "Failed to get boot status: %s", strerror(errno));
         } else {
-            log_bootstatus(bootstatus);        
+            log_bootstatus(bootstatus);
         }
     } else {
         log_message(LOG_INFO, "Running in test mode, no hardware watchdog used");

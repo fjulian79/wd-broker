@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.0-rc3] - 2025-05-18
+
+### Added
+- Added a config file option to reject clients with non unique names
+- Added a config file option to reject clients that are not in the config file
+- Added support for listing announced clients via the `wd-ctrl` CLI tool
+- Added support for unregistering announced clients via the `wd-ctrl` CLI tool
+- Updated the Documentation
+
 ## [2.0.0-rc2] - 2025-05-18
 
 ### Added

@@ -62,7 +62,7 @@ void print_help(void) {
 }
 
 void print_table_header() {
-    printf("\n%-18s %-6s %-20s %-13s %-8s\n", "Client ID", "PID", "Name", "Timeout (ms)",
+    printf("\n%-18s %-6s %-20s %-13s %-8s\n", "clientID", "PID", "Name", "Timeout (ms)",
            "pidCheck");
     printf("%.*s\n", 69, "---------------------------------------------------------------------");
 }

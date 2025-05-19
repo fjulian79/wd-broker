@@ -40,19 +40,18 @@ To avoid disrupting a running instance, the broker performs a safety check befor
 
 This approach reduces the attack surface and aligns with least-privilege principles.
 
----
-
 ## STRIDE Analysis
 
 ### 1. Spoofing (Identity Forgery)
 
-**Threat:** A malicious process attempts to impersonate a legitimate client by using its `clientID`.
+**Threat:** A malicious process attempts to impersonate a legitimate client by using their `clientID` or `name`.
 
 **Mitigations:**
-
-- Each client is identified by its wd-broker `clientID` and `pid` during registration.
-- The broker verifies the `pid` of the process sending commands (e.g., `PING`, `UNREGISTER`) to ensure it matches the PID of the process that originally registered the `clientID`.
 - Only processes belonging to the trusted group `wd-clients` can connect to the socket (enforced by Unix file permissions).
+  - As a result no extra mitigation is planned against malicious clients using client names or ID's 
+  - This is considered a design choice, as all members of the `wd-clients` group are trusted.
+- Each client is identified by its `name` and `pid` during registration resulting in a unique `clientID` which is used for all further communication.
+- The broker verifies the `pid` of the process sending commands (e.g., `PING`, `UNREGISTER`) to ensure it matches the PID of the process that originally registered the `clientID`.
 - The broker runs with dropped privileges after initialization to reduce spoofing risks if exploited.
 - Since the broker cannot enforce secure handling of client state on the client side, a compromised client can continue to interact with the broker using its own `clientID`. This limitation is accepted by design: all members of the `wd-clients` group are considered trusted, and authentication serves as a lightweight safeguard against accidental misuse or implementation errors.
 
@@ -68,10 +67,11 @@ This approach reduces the attack surface and aligns with least-privilege princip
 - Modifying ping payloads to falsify liveness
 - Corrupting internal state to keep dead clients alive
 - Unregistering other clients
-- If the config file file is writable by unauthorized users, they could alter broker behavior or bypass controls.
+- If the config file is writable by unauthorized users, they could alter broker behavior or bypass controls.
 
 **Mitigations:**
 
+- The broker checks that the given socket path is a valid Unix domain socket and that it is owned by the `wd-clients` group to prevent tampering (e.g. symlink attacks).
 - The broker verifies the `pid` of the process sending `PING` commands to ensure it matches the original registering process.
 - The socket protocol is request-response per connection with stateless handling.
 - Broker memory (client table) is private to the process; no external tampering is possible.
@@ -83,7 +83,7 @@ This approach reduces the attack surface and aligns with least-privilege princip
 
 ### 3. Repudiation (Denying Responsibility)
 
-Repudiation is not applicable. Clients do not authenticate, and the broker has no expectation of accountable actions from them. Members of the `wd-clients` group are considered trusted, and the broker does not enforce any authentication mechanisms.
+Repudiation is not applicable. Clients do not authenticate, and the broker has no expectation of accountable actions from them. Members of the `wd-clients` group are considered trusted, and the broker does not enforce any authentication mechanisms. However, suspicious behavior is logged along with the context (timestamp, pid, client names, ...) by the broker for auditing purposes.
 
 ---
 
@@ -102,7 +102,7 @@ Repudiation is not applicable. Clients do not authenticate, and the broker has n
 - Socket is only accessible to the `wd-clients` group.
 - Data is only stored in RAM and is not persisted by the broker.
 - Broker runs as an unprivileged user to minimize the leakage surface.
-- Even if a `clientID` is compromised, its use requires the `pid` to match the original registering process, which is considered highly unlikely in practice.
+- Even if a `clientID` is compromised, it's use requires the `pid` to match the original registering process, which is considered highly unlikely in practice.
 - Note that the client can disable the PID check, but only once during registration. If it does, only its own `clientID` may be used by others. This limits the impact to that client's scope.
 - The configuration file is owned by a dedicated service user (e.g., `wd-broker`) and is not writable by other users (`chmod 640` or stricter). This prevents unauthorized access to sensitive information.
 
@@ -117,15 +117,17 @@ Repudiation is not applicable. Clients do not authenticate, and the broker has n
 
 - Flooding the broker with excessive `REGISTER` or `PING` requests to exhaust resources.
 - Registering a fake client and letting it timeout.
+- When `unique_clients` or `strict_clients` is enabled, a malicious client could register with the same name as a legitimate client, causing the broker to reject the legitimate client.
 - Overloading the socket to block legitimate clients.
 - Overwriting an active socket used by a running instance.
 
 **Mitigations:**
 
-- Only processes belonging to the `wd-clients` group or `root` can access the Unix domain socket. This prevents unauthorized users from interacting with the broker.
+- Only processes belonging to the `wd-clients` group or `root` can access the Unix domain socket. This prevents unauthorized users from interacting with the broker. 
+  - As a result no extra mitigation is planned against malicious clients occupying client names of legitimate clients when `unique_clients` or `strict_clients` is enabled.
+  - This is considered a design choice, as all members of the `wd-clients` group are trusted.
 - The configuration file is owned by a dedicated service user (e.g., `wd-broker`) and is not writable by other users (`chmod 640` or stricter). This prevents unauthorized modifications.
 - On startup, the broker checks config file ownership and permissions, refusing to run if they are too permissive. This is accepted as a potential risk, but modifications to config file depend on appropriate privileges. If the attacker has such privileges, they can already do significant damage.
-
 
 ---
 
@@ -143,8 +145,6 @@ Repudiation is not applicable. Clients do not authenticate, and the broker has n
 - Only feeds `/dev/watchdog`; no general-purpose execution or file access.
 - Socket group restriction prevents non-members from connecting.
 
----
-
 ## Conclusion
 
 The `wd-broker` daemon is designed to minimize trust while offering a robust watchdog supervision service. The system assumes local attackers with limited privileges and hardens against them through a combination of:
@@ -161,16 +161,15 @@ By explicitly defining threats using STRIDE, the design remains transparent and 
 
 ## Status
 
-| Threat                     | Mitigation                    | Status              |
-|----------------------------|-------------------------------|---------------------|
-| Spoofing                   | PID verification              | Implemented         |
-| Tampering                  | Stateless protocol            | Implemented         |
-| Repudiation                | None (Not applicable)         | n.a.                |
-| Information Disclosure     | Socket access control         | Implemented         |
-| Denial of Service (DoS)    | Limited socket access         | Implemented         |
-| Elevation of Privilege     | Privilege dropping            | Implemented         |
-| Configuration file access  | File permissions check        | Implemented         |
+| Threat                     | Mitigation                                                     | Status      |
+|----------------------------|----------------------------------------------------------------|-------------|
+| Spoofing                   | PID verification                                               | Implemented |
+| Tampering                  | Stateless protocol, socket and config file integrity checks    | Implemented |
+| Repudiation                | Not applicable (no auth); suspicious behavior is logged        | n.a.        |
+| Information Disclosure     | Socket access control                                          | Implemented |
+| Denial of Service (DoS)    | Limited socket access, stale socket detection                  | Implemented |
+| Elevation of Privilege     | Privilege dropping                                             | Implemented |
 
 ---
 
-*Last updated: 2025-05-18*
+*Last updated: 2025-05-19*
