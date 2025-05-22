@@ -32,4 +32,5 @@ check_PROGRAMS = wd-client-test
 wd_client_test_SOURCES = wd-client-test.c
 wd_client_test_LDADD = ../src/libwd-client.la
 
-AM_CFLAGS = -I$(top_srcdir)/include
+AM_CFLAGS = -DSYSCONFDIR=\"$(sysconfdir)\"
+AM_CFLAGS += -I$(top_srcdir)/include

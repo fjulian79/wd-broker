@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0-rc4] - 2025-05-22
+
+### Added
+- Added sync() to the watchdog idle loop to persist data before hardware reset.
+
+### Fixed
+- Removed deprecated section in the config file template
+- Replaced configure.ac hack by proper solution to set sysconfdir in the code.
+- Fixed non portable printf format string in `wd-broker.c`
+- Improved documentation.
+
 ## [2.0.0-rc3] - 2025-05-18
 
 ### Added
@@ -41,5 +52,5 @@
 
 ### Known Limitations
 - Does not log to tty or /dev/console in case of critical issues.
-  This planned but needs mire test.
+  This planned but needs more test.
 - Tests could be improved.

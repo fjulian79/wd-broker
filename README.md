@@ -54,11 +54,10 @@ make
 sudo make install
 ````
 
-Cross-compilation is supported via the `--host` parameter of `./configure`.
-In this case, do not use `--prefix` to set the staging directory, use `make install DESTDIR=<path>` instead.
+Cross-compilation is supported as usual for Autotools projects. You can use the `--host` option to specify the target architecture. The `--sysconfdir` option can be used to set the location of the configuration file. Or you can set the `--prefix` option to specify the installation prefix. The `DESTDIR` variable can be used to specify the installation directory. Example:
 `````
 ./autogen.sh
-./configure --host=<target> --sysconfdir=/usr/local
+./configure --host=<target> --sysconfdir=<path>
 make
 make install DESTDIR=<path>
 `````

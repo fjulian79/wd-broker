@@ -730,7 +730,7 @@ void handle_command(int client_sock, client_t *clients) {
             }
         }
         offset +=
-            snprintf(msg + offset, sizeof(msg) - offset, "active_clients=%ld\n", active_clients);
+            snprintf(msg + offset, sizeof(msg) - offset, "active_clients=%zu\n", active_clients);
         for (size_t i = 0; i < WD_MAX_CLIENTS; ++i) {
             if (clients[i].active || clients[i].anounced) {
                 offset += snprintf(msg + offset, sizeof(msg) - offset, "%s %d %s %u %d\n",
@@ -1100,6 +1100,7 @@ int main(int argc, char *argv[]) {
         close(timer_fd);
         unlink(config.socket_path);
         while (running) {
+            sync();
             sleep(1);
         }
     }
