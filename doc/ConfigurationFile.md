@@ -79,7 +79,7 @@ For each client, you can specify the following options:
 The time in milliseconds the client has to register with the wd-broker daemon compared to the time the daemon started.
 
 ## Default configuration file template
-The project comes with a default configuration file ([src/wd-broker.conf](src/wd-broker.conf)) including all available options along with comments explaining their purpose. It is automatically installed at `/${sysconfdir}/wd-broker.conf` via `make install`, but permissions and ownership must be set manually.
+The project comes with a default configuration file ([src/wd-broker.conf](../src/wd-broker.conf)) including all available options along with comments explaining their purpose. It is automatically installed at `/${sysconfdir}/wd-broker.conf` via `make install`, but permissions and ownership must be set manually.
 
 ## Further Restrictions
 * If `wd-broker`can't find the configuration file when started, it will refuse to start and print an error message. This is to prevent false assumptions about the daemon's behavior. It is also prohibited to use a symbolic link as configuration file. 
