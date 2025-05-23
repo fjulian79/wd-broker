@@ -86,6 +86,7 @@ typedef struct {
 
 typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN];
+    char timeout_hook_path[PATH_MAX];
     int  wd_timeout_s;
     bool strict_clients;
     bool unique_clients;
@@ -308,6 +309,16 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
 
             if (strcmp(t_key, "socket_path") == 0) {
                 strncpy(config.socket_path, t_val, sizeof(config.socket_path) - 1);
+            } else if (strcmp(t_key, "timeout_hook_path") == 0) {
+                strncpy(config.timeout_hook_path, t_val, sizeof(config.timeout_hook_path) - 1);
+            } else if (strcmp(t_key, "hw_timeout_s") == 0) {
+                config.wd_timeout_s = atoi(t_val);
+                if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S ||
+                    config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
+                    fclose(f);
+                    fatal_error("Hardware watchdog timeout must be between %d and %d seconds",
+                                WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
+                }
             } else if (strcmp(t_key, "wd_timeout_s") == 0) {
                 config.wd_timeout_s = atoi(t_val);
             } else if (strcmp(t_key, "strict_clients") == 0) {
@@ -860,6 +871,23 @@ int main(int argc, char *argv[]) {
 
     parse_config(config_file, clients, WD_MAX_CLIENTS);
 
+    /* Check if the timeout hook has been set and test if it is fullfills the expectations
+     * At this moment this is done to give the user feedback it is not usable */
+    if (config.timeout_hook_path[0] != '\0') {
+        if (lstat(config.timeout_hook_path, &st) != 0) {
+            fatal_error("Timeout hook '%s' does not exist: %s", config.timeout_hook_path,
+                        strerror(errno));
+        } else if (!S_ISREG(st.st_mode)) {
+            fatal_error("Timeout hook '%s' is not a regular file", config.timeout_hook_path);
+        } else if (st.st_uid != pw->pw_uid) {
+            fatal_error("Timeout hook '%s' must be owned by '%s' (uid %d)",
+                        config.timeout_hook_path, service_user, pw->pw_uid);
+        } else if ((st.st_mode & 022) != 0) {
+            fatal_error("Timeout hook '%s' must not be writable by group or others",
+                        config.timeout_hook_path);
+        }
+    }
+
     if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S || config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
         fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
                     WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
@@ -1033,7 +1061,7 @@ int main(int argc, char *argv[]) {
              * on the server socket we also want to check the clients to detect timeouts
              * as early as possible */
 
-            /* first process a client input to do not delay a heartbeat */
+            /* First process a client input to do not delay a heartbeat */
             if (FD_ISSET(server_sock, &fds)) {
                 int client_sock = accept(server_sock, NULL, NULL);
                 if (client_sock >= 0) {
@@ -1090,16 +1118,47 @@ int main(int argc, char *argv[]) {
 
     if (!all_ok) {
         /* Have been kicked out of the main loop because of a client timeout.
-         * Close the socket and wait for external termination, either by the
-         * intentional reset if the watchdog is enabled or by the user
-         * termination in test mode, makes not differnece at this point.
-         * */
+         * Close the socket to let all clients know that we are going down. */
         log_message(LOG_EMERG, "SYSTEM RESET PENDING!");
-        fflush(stdout);
-        fflush(stderr);
         close(timer_fd);
         unlink(config.socket_path);
+
+        if (config.timeout_hook_path[0] != '\0') {
+            /* Redo the checks for the timeout hook, to be sure it is still valid */
+            if (lstat(config.timeout_hook_path, &st) != 0) {
+                log_message(LOG_ERR, "Timeout hook '%s' does not exist: %s",
+                            config.timeout_hook_path, strerror(errno));
+            } else if (!S_ISREG(st.st_mode)) {
+                log_message(LOG_ERR, "Timeout hook '%s' is not a regular file",
+                            config.timeout_hook_path);
+            } else if (st.st_uid != pw->pw_uid) {
+                log_message(LOG_ERR, "Timeout hook '%s' must be owned by '%s' (uid %d)",
+                            config.timeout_hook_path, service_user, pw->pw_uid);
+            } else if ((st.st_mode & 022) != 0) {
+                log_message(LOG_ERR, "Timeout hook '%s' must not be writable by group or others",
+                            config.timeout_hook_path);
+            } else {
+                /* All checks passed, feed the watchdog one last time to give the timeout hook a
+                 * defined time to run and then execute it. */
+                if (watchdog_fd != -1) {
+                    if (write(watchdog_fd, "\0", 1) != 1) {
+                        fatal_error("Failed to feed watchdog: %s", strerror(errno));
+                    }
+                }
+                log_message(LOG_INFO, "Executing timeout hook '%s'", config.timeout_hook_path);
+                int ret = system(config.timeout_hook_path);
+                if (ret == -1) {
+                    log_message(LOG_ERR, "Failed to execute timeout hook: %s", strerror(errno));
+                } else {
+                    log_message(LOG_INFO, "Timeout hook executed with return code %d", ret);
+                }
+            }
+        }
+        /* "Change is the essential process of all existence." – Spock
+         * May the logs be ever in your favor. */
         while (running) {
+            fflush(stdout);
+            fflush(stderr);
             sync();
             sleep(1);
         }
