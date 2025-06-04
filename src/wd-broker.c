@@ -184,11 +184,19 @@ void log_message(int priority, const char *fmt, ...) {
 }
 
 static char *trim(char *str) {
-    while (isspace(*str))
+    if (!str) {
+        return str;
+    }
+    while (isspace((unsigned char)*str)) {
         str++;
+    }
+    if (*str == '\0') {
+        return str;
+    }
     char *end = str + strlen(str) - 1;
-    while (end > str && isspace(*end))
+    while (end > str && isspace((unsigned char)*end)) {
         *end-- = '\0';
+    }
     return str;
 }
 
