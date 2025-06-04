@@ -198,7 +198,7 @@ int wd_client_ping(wd_client_t *client) {
     }
 
     char    response[64];
-    ssize_t len = read(socket_fd, response, sizeof(response) - 1);
+    ssize_t len = read_with_timeout(socket_fd, response, sizeof(response));
     if (len < 0) {
         close(socket_fd);
         WD_SET_STATUS(client, "Failed to read PING response: %s", strerror(errno));
