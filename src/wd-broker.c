@@ -350,7 +350,8 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
 
         /* Check for client section */
         if (sscanf(trimmed, "[client %63[^]]", name) == 1) {
-            if (client_idx == max_clients - 1) {
+            client_idx++;
+            if (client_idx >= (int)max_clients) {
                 fclose(f);
                 fatal_error("Too many clients defined in %s", filename);
             }
@@ -358,7 +359,6 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
                 fclose(f);
                 fatal_error("Invalid client name used in line %d", line_num);
             }
-            client_idx++;
             strncpy(clients[client_idx].name, name, sizeof(clients[client_idx].name));
             /* Assume no further specs and set defaults */
             make_clientID(clients[client_idx].clientID);
