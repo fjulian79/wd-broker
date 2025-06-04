@@ -866,10 +866,11 @@ int main(int argc, char *argv[]) {
                     WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
     }
 
-    /* We want to tick one second faster then the hardware watchdog to have a safety margin
-     * for scheduling jitter and high CPU loads. The minimum value of wd_timeout_s is
-     * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
-    timer_spec.it_interval.tv_sec = config.wd_timeout_s - 1;
+    /* We want to tick faster than the watchdog timeout, so we set the timer to half the timeout to 
+     * prevent unintended watchdog resets in case of high CPU load or other performance issues.
+     * Using watchdog timeout /2 seems to be quite common in practice.
+     */
+    timer_spec.it_interval.tv_sec = config.wd_timeout_s / 2;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
         fatal_errno("timerfd_settime failed");
