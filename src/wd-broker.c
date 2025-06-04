@@ -818,6 +818,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 's':
                 syslog_facility = parse_syslog_facility(optarg);
+                break;
             case 'u':
                 service_user = optarg;
                 break;
