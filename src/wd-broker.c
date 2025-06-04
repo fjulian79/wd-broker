@@ -227,7 +227,7 @@ int parse_syslog_facility(const char *str) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    size_t            raw[WD_CLIENTID_LEN - 1];
+    uint8_t           raw[WD_CLIENTID_LEN / 2];
     bool              have_raw = false;
 
     /* Try to read random bytes from /dev/urandom */
@@ -248,14 +248,15 @@ void make_clientID(char *clientID_out) {
         unsigned int seed = (unsigned int)(tv.tv_sec ^ tv.tv_usec ^ getpid() ^ getppid());
 
         srandom(seed);
-        for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
+        for (size_t i = 0; i < sizeof(raw); ++i) {
             raw[i] = random() & 0xFF;
         }
     }
 
     /* Convert the raw bytes to a hex string */
-    for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
-        clientID_out[i] = hex[raw[i] & 0x0F];
+    for (size_t i = 0; i < sizeof(raw); ++i) {
+        clientID_out[i * 2] = hex[(raw[i] >> 4) & 0x0F];
+        clientID_out[i * 2 + 1] = hex[raw[i] & 0x0F];
     }
 
     clientID_out[WD_CLIENTID_LEN - 1] = '\0';
