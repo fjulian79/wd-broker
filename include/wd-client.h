@@ -31,7 +31,7 @@
 
 /* Max length of client name.
  *
- * ATTENTION: Please not that CLIENT_NAME_FMT_LEN_STR in wd-broker.c must be
+ * ATTENTION: Please note that CLIENT_NAME_FMT_LEN_STR in wd-broker.c must be
  *            in sync with this defintion.
  */
 #define WD_CLIENT_NAME_LEN   64

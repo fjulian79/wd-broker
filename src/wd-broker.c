@@ -121,7 +121,7 @@ void print_help(void) {
     printf("                            LOG_LOCAL0 through LOG_LOCAL7\n");
     printf("  --no-watchdog             Disable hardware watchdog (test mode, default: false)\n");
     printf("\nExamples:\n");
-    printf("  wd-broker --no-watchdog --config /tmp/test-config\n");
+    printf("  wd-broker --no-watchdog --config-file /tmp/test-config\n");
     printf("  wd-broker --daemonize\n");
     printf("\n");
 }
