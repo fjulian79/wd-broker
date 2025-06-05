@@ -60,7 +60,7 @@
 #define WD_HW_TIMEOUT_MIN_S        WD_HW_TIMEOUT_DEFAULT_S
 #define WD_HW_TIMEOUT_MAX_S        60
 #define WD_CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
-#define WD_REGISTER_SCANF_FORMAT   "%" WD_CLIENT_NAME_FMT_LEN_STR "s %d %15s %15s"
+#define WD_REGISTER_SCANF_FORMAT   "%" WD_CLIENT_NAME_FMT_LEN_STR "s %u %15s %15s"
 #define WD_CLIENTID_FMT_LEN        16 // Must be a number cant use CLIENTID_LEN - 1
 #define WD_CLIENTID_FMT_STR        STR(WD_CLIENTID_FMT_LEN)
 #define WD_CLIENTID_SCANF_FORMAT   "%" WD_CLIENTID_FMT_STR "s %15s"
@@ -122,7 +122,7 @@ void print_help(void) {
     printf("                            LOG_LOCAL0 through LOG_LOCAL7\n");
     printf("  --no-watchdog             Disable hardware watchdog (test mode, default: false)\n");
     printf("\nExamples:\n");
-    printf("  wd-broker --no-watchdog --config /tmp/test-config\n");
+    printf("  wd-broker --no-watchdog --config-file /tmp/test-config\n");
     printf("  wd-broker --daemonize\n");
     printf("\n");
 }
@@ -185,11 +185,19 @@ void log_message(int priority, const char *fmt, ...) {
 }
 
 static char *trim(char *str) {
-    while (isspace(*str))
+    if (!str) {
+        return str;
+    }
+    while (isspace((unsigned char)*str)) {
         str++;
+    }
+    if (*str == '\0') {
+        return str;
+    }
     char *end = str + strlen(str) - 1;
-    while (end > str && isspace(*end))
+    while (end > str && isspace((unsigned char)*end)) {
         *end-- = '\0';
+    }
     return str;
 }
 
@@ -228,7 +236,7 @@ int parse_syslog_facility(const char *str) {
 
 void make_clientID(char *clientID_out) {
     static const char hex[] = "0123456789abcdef";
-    size_t            raw[WD_CLIENTID_LEN - 1];
+    uint8_t           raw[WD_CLIENTID_LEN / 2];
     bool              have_raw = false;
 
     /* Try to read random bytes from /dev/urandom */
@@ -249,14 +257,15 @@ void make_clientID(char *clientID_out) {
         unsigned int seed = (unsigned int)(tv.tv_sec ^ tv.tv_usec ^ getpid() ^ getppid());
 
         srandom(seed);
-        for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
+        for (size_t i = 0; i < sizeof(raw); ++i) {
             raw[i] = random() & 0xFF;
         }
     }
 
     /* Convert the raw bytes to a hex string */
-    for (size_t i = 0; i < WD_CLIENTID_LEN - 1; ++i) {
-        clientID_out[i] = hex[raw[i] & 0x0F];
+    for (size_t i = 0; i < sizeof(raw); ++i) {
+        clientID_out[i * 2] = hex[(raw[i] >> 4) & 0x0F];
+        clientID_out[i * 2 + 1] = hex[raw[i] & 0x0F];
     }
 
     clientID_out[WD_CLIENTID_LEN - 1] = '\0';
@@ -361,7 +370,8 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
 
         /* Check for client section */
         if (sscanf(trimmed, "[client %63[^]]", name) == 1) {
-            if (client_idx == max_clients - 1) {
+            client_idx++;
+            if (client_idx >= (int)max_clients) {
                 fclose(f);
                 fatal_error("Too many clients defined in %s", filename);
             }
@@ -369,7 +379,6 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
                 fclose(f);
                 fatal_error("Invalid client name used in line %d", line_num);
             }
-            client_idx++;
             strncpy(clients[client_idx].name, name, sizeof(clients[client_idx].name));
             /* Assume no further specs and set defaults */
             make_clientID(clients[client_idx].clientID);
@@ -829,6 +838,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 's':
                 syslog_facility = parse_syslog_facility(optarg);
+                break;
             case 'u':
                 service_user = optarg;
                 break;
@@ -893,10 +903,11 @@ int main(int argc, char *argv[]) {
                     WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
     }
 
-    /* We want to tick one second faster then the hardware watchdog to have a safety margin
-     * for scheduling jitter and high CPU loads. The minimum value of wd_timeout_s is
-     * LOOP_INTERVAL_MIN_MS and checkd above so we are save to take one second off */
-    timer_spec.it_interval.tv_sec = config.wd_timeout_s - 1;
+    /* We want to tick faster than the watchdog timeout, so we set the timer to half the timeout to 
+     * prevent unintended watchdog resets in case of high CPU load or other performance issues.
+     * Using watchdog timeout /2 seems to be quite common in practice.
+     */
+    timer_spec.it_interval.tv_sec = config.wd_timeout_s / 2;
     timer_spec.it_value.tv_sec = timer_spec.it_interval.tv_sec;
     if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
         fatal_errno("timerfd_settime failed");
