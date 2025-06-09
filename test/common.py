@@ -179,6 +179,17 @@ class TestBroker:
             for line in self.log_lines:
                 print("[BROKER]", line)
 
+    def check_log(self, expected):
+        with self._log_lock:
+            for line in self.log_lines:
+                if expected in line:
+                    return True
+        return False
+
+    def clear_log(self):
+        with self._log_lock:
+            self.log_lines.clear()
+
     def _log_reader_from_fd(self, fd):
         try:
             with os.fdopen(fd) as f:
