@@ -319,6 +319,12 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
                 strncpy(config.socket_path, t_val, sizeof(config.socket_path) - 1);
             } else if (strcmp(t_key, "wd_timeout_s") == 0) {
                 config.wd_timeout_s = atoi(t_val);
+                if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S ||
+                    config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
+                    fatal_error("Invalid watchdog timeout set in line %d. Must be between %d and "
+                                "%d seconds.",
+                                line_num, WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
+                }
             } else if (strcmp(t_key, "strict_clients") == 0) {
                 if (strcmp(t_val, "true") == 0) {
                     config.strict_clients = true;
@@ -340,14 +346,16 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
             } else if (strcmp(t_key, "timeout_ms") == 0) {
                 if (client_idx == -1) {
                     fclose(f);
-                    fatal_error("Timeout must be set in a client section");
+                    fatal_error("Unexpected client timeout set in line %d (must be set in a client "
+                                "section)",
+                                line_num);
                 }
                 clients[client_idx].timeout_ms = atoi(t_val);
                 if (clients[client_idx].timeout_ms < WD_CLIENT_TIMEOUT_MIN_MS ||
                     clients[client_idx].timeout_ms > WD_CLIENT_TIMEOUT_MAX_MS) {
                     fclose(f);
-                    fatal_error("Timeout must be between %d and %d ms", WD_CLIENT_TIMEOUT_MIN_MS,
-                                WD_CLIENT_TIMEOUT_MAX_MS);
+                    fatal_error("Invalid client timeout in line %d, must be between %d and %d ms",
+                                line_num, WD_CLIENT_TIMEOUT_MIN_MS, WD_CLIENT_TIMEOUT_MAX_MS);
                 }
             } else {
                 /* Catch all unknown keys */
@@ -870,12 +878,7 @@ int main(int argc, char *argv[]) {
 
     parse_config(config_file, clients, WD_MAX_CLIENTS);
 
-    if (config.wd_timeout_s < WD_HW_TIMEOUT_MIN_S || config.wd_timeout_s > WD_HW_TIMEOUT_MAX_S) {
-        fatal_error("Invalid watchdog timeout: must be between %d and %d seconds.\n",
-                    WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
-    }
-
-    /* We want to tick faster than the watchdog timeout, so we set the timer to half the timeout to 
+    /* We want to tick faster than the watchdog timeout, so we set the timer to half the timeout to
      * prevent unintended watchdog resets in case of high CPU load or other performance issues.
      * Using watchdog timeout /2 seems to be quite common in practice.
      */
