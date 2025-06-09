@@ -54,6 +54,8 @@ run_test() {
     echo
 }
 
+bad_files=()
+
 for cfg in "$SCRIPT_DIR"/cfg/*.conf; do
     [ -e "$cfg" ] || continue
     owner=$(stat -c '%U' "$cfg")
@@ -70,17 +72,27 @@ for cfg in "$SCRIPT_DIR"/cfg/*.conf; do
     fi
 
     if [ $fix_needed -eq 1 ]; then
-        read -p "Fix ownership and permissions for $cfg? [y/n] " answer
-        if [[ "$answer" =~ ^[Yy]$ ]]; then
-            sudo chown "$CONFIG_USER:$CONFIG_GROUP" "$cfg"
-            sudo chmod 644 "$cfg"
-            echo "[INFO] Fixed $cfg"
-        else
-            echo "[ERROR] Please fix $cfg manually before running tests."
-            exit 3
-        fi
+        bad_files+=("$cfg")
     fi
 done
+
+if [ ${#bad_files[@]} -gt 0 ]; then
+    echo "[WARN] The following config files have wrong ownership or permissions:"
+    for f in "${bad_files[@]}"; do
+        echo "  $f"
+    done
+    read -p "Fix ownership and permissions for ALL these files? [y/n] " answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        for f in "${bad_files[@]}"; do
+            sudo chown "$CONFIG_USER:$CONFIG_GROUP" "$f"
+            sudo chmod 644 "$f"
+            echo "[INFO] Fixed $f"
+        done
+    else
+        echo "[ERROR] Please fix the files manually before running tests."
+        exit 3
+    fi
+fi
 
 if [ $# -ge 1 ]; then
     matched=0
