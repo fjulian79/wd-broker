@@ -22,6 +22,7 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 * Comes with a minimalistic command-line tool (`wd-ctrl`) to interact with the broker
 * Simple C library (`libwd-client`) to register clients and send heartbeats
 * Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
+* Offers a reboot hook to allow graceful shutdowns before a reset
 * Written with portability and embedded systems in mind
 
 ## Changelog

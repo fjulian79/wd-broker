@@ -36,6 +36,16 @@ Service user to drop privileges to after initialization. This user must exist an
 
 Defines the hardware watchdog timeout in seconds. This is the time the watchdog will wait before triggering a system reset if a missing client heartbeat is detected.
 
+### timeout_hook_path
+`timeout_hook_path = /usr/local/bin/wd-broker-timeout-hook`
+* Default: none
+
+Optional path to a timeout hook. If set, the hook will be executed by wd-broker in case of a client heartbeat timeout, after all internal actions have been performed and the system is expected to reboot. Its purpose is to give the user a chance to initiate a graceful shutdown, e.g. bring hardware to a safe state, unmount filesystems (if possible, see below), or send critical notifications to other devices or systems. **IT IS NOT INTENDED TO BE USED AS REBOOT PREVENTION MECHANISM!**
+
+The hook (script or binary) must be owned by the wd-broker service user and must not be writable by group or others. Permissions 0700 are recommended. These requirements are checked twice: first when the daemon starts, and again before executing the hook in case of a timeout. If they are not met when the daemon starts, it will refuse to start and print an error message. If they are not met when the timeout occurs, the hook will not be executed.
+
+**WARNING**: The hook cannot be run as root, because the daemon drops privileges to the service user after initialization. This means that the hook must not require root privileges to perform its tasks. If it does, it will fail to execute. The user has to carefully decide which privileges are given to the service user and which are not. If the service user gets too many privileges, it can lead to security issues. If it gets too few privileges, the hook may not be able to perform its tasks. So it comes down to a trade-off between safety and security and the sweet spot depends on the specific use case and/or system design. However, the hook is an offer to the user to increase safety, it may be helpful, or it may not.
+
 ### strict_clients
 `strict_clients=true|false`
 * Default: `false`
@@ -61,10 +71,10 @@ When set to true clients may only register if their name is not already register
 `[client <name>]`
 
 Each client section starts with `[client <name>]`
-* The client name must not be longer then 63 characters and may contain any printable character except ']'
+* The client name must not be longer than 63 characters and may contain any printable character except ']'
 * The client name should be unique (recommended), see `unique_clients` option on how to enforce this.
 
-***ATTENTION:*** Announced clients must register with the broker daemon within the timeout period (see below), or the wd-broker daemon will stop feeding the watchdog and the system will reboot. Please read also the 'System design recomendations' section in the [README](README.md) file.
+***ATTENTION:*** Announced clients must register with the broker daemon within the timeout period (see below), or the wd-broker daemon will stop feeding the watchdog and the system will reboot. Please read also the 'System design recommendations' section in the [README](README.md) file.
 
 This mechanism ensures that all critical applications are running and responsive after a reboot. If a required client is missing or fails to start, the system will not remain in a potentially unsafe state.
 
