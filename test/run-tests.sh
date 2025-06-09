@@ -25,6 +25,8 @@
 # Source repository: https://github.com/fjulian79/wd-broker
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_USER="wd-broker"
+CONFIG_GROUP="wd-clients"
 
 TOTAL=0
 PASSED=0
@@ -51,6 +53,34 @@ run_test() {
 
     echo
 }
+
+for cfg in "$SCRIPT_DIR"/cfg/*.conf; do
+    [ -e "$cfg" ] || continue
+    owner=$(stat -c '%U' "$cfg")
+    perms=$(stat -c '%a' "$cfg")
+    fix_needed=0
+
+    if [ "$owner" != "$CONFIG_USER" ]; then
+        echo "[WARN] Config file $cfg is not owned by $CONFIG_USER (owner: $owner)"
+        fix_needed=1
+    fi
+    if [ $(( (10#${perms:1:1}) & 2 )) -ne 0 ] || [ $(( (10#${perms:2:1}) & 2 )) -ne 0 ]; then
+        echo "[WARN] Config file $cfg is writable by group or others (permissions: $perms)"
+        fix_needed=1
+    fi
+
+    if [ $fix_needed -eq 1 ]; then
+        read -p "Fix ownership and permissions for $cfg? [y/n] " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            sudo chown "$CONFIG_USER:$CONFIG_GROUP" "$cfg"
+            sudo chmod 644 "$cfg"
+            echo "[INFO] Fixed $cfg"
+        else
+            echo "[ERROR] Please fix $cfg manually before running tests."
+            exit 3
+        fi
+    fi
+done
 
 if [ $# -ge 1 ]; then
     matched=0
