@@ -28,7 +28,7 @@ import re
 import ast
 from pathlib import Path
 
-# Konstanten, die übernommen werden sollen
+# Constants to extract from source files
 WANTED_KEYS = {
     "PACKAGE_VERSION",
     "SOCKET_PROT_VERSION",
@@ -37,10 +37,10 @@ WANTED_KEYS = {
     "WD_CLIENT_TIMEOUT_MAX_MS",
 }
 
-# Regex für einfache #define-Zeilen
+# Regex for matching #define directives
 define_pattern = re.compile(r'#define\s+(\w+)\s+(.+)')
 
-# Verzeichnisse, die durchsucht werden sollen
+# Directories to search for source files
 INPUT_DIRS = [Path("."), Path("src")]
 OUTPUT_FILE = Path("test/constants.py")
 constants = {}
@@ -48,27 +48,27 @@ constants = {}
 def parse_value(val):
     val = val.strip()
 
-    # Entferne äußere Klammern wie (1 * 100)
+    # Remoce brackets if present
     if val.startswith("(") and val.endswith(")"):
         val = val[1:-1].strip()
 
-    # String? Versuche sichere Auswertung
+    # Process string literals
     if val.startswith('"') or val.startswith("'"):
         try:
             return ast.literal_eval(val)
         except Exception:
             return val.strip('"').strip("'")
 
-    # Versuche, numerischen Ausdruck auszuwerten
+    # Try to interpret as a number or boolean
     try:
         return ast.literal_eval(val)
     except Exception:
         try:
             return eval(val, {"__builtins__": {}})
         except Exception:
-            return None  # Nicht interpretierbar
+            return None
 
-# C- und Header-Files durchsuchen
+# Search for all C header and source files in the specified directories
 for input_dir in INPUT_DIRS:
     for filepath in input_dir.glob("**/*.[ch]"):
         with filepath.open() as f:
@@ -81,12 +81,12 @@ for input_dir in INPUT_DIRS:
                         if parsed is not None:
                             constants[key] = parsed
 
-# Ausgabedatei erzeugen
+# Write the extracted constants
 OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 with OUTPUT_FILE.open("w") as f:
     f.write("# Auto-generated from C headers and source files\n\n")
     for key, value in sorted(constants.items()):
         if isinstance(value, str):
-            f.write(f"{key} = {value!r}\n")  # sauber gequoted
+            f.write(f"{key} = {value!r}\n")
         else:
             f.write(f"{key} = {value}\n")
