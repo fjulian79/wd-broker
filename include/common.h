@@ -29,6 +29,7 @@
 #define CMD_REGISTER        "REGISTER "
 #define CMD_PING            "PING "
 #define CMD_UNREGISTER      "UNREGISTER "
+#define CMD_REBOOT          "REBOOT"
 #define CMD_STATUS          "STATUS"
 #define CMD_VERSION         "VERSION"
 

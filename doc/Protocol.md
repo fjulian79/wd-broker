@@ -60,6 +60,21 @@ UNREGISTER a4b7c8e912d0fc13\n
 → OK
 ```
 
+## REBOOT
+
+Triggers a system reboot via the hardware watchdog.
+
+* Only allowed if the calling process is root.
+* Response: `OK <seconds>` or `ERROR <reason>`
+* `<seconds>` is the timeout for the watchdog before it triggers a reboot.
+
+Example:
+
+```
+REBOOT\n
+→ OK 60
+```
+
 ## STATUS
 
 Returns system-level information and all active clients.

@@ -12,6 +12,10 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 * Mandatory clients can be announced in the configuration file
 * If a mandatory client does not register within its timeout, system reset will be initiated
 * Strict check of config file ownership and permissions
+* Supports reboot failsafe: 
+  * If the broker receives a reboot command from wd-ctrl, it will configure the hardware watchdog to trigger a reboot after a defined timeout and quit. 
+  * This can be used to ensure the system can recover if got stuck during reboot for any reason (e.g. deadlock in a driver, application failure, etc.).
+  * Only root is allowed to send the reboot command, preventing unauthorized reboots.
 * Options to control flexibility and security:
   * Reject clients with non-unique names
   * Reject clients that are not in the config file
@@ -21,7 +25,7 @@ Designed for **reliability-critical systems**, `wd-broker` ensures that the hard
 * Works with C binaries, Python scripts, shell tools, or whatever can use a Unix domain socket
 * Comes with a minimalistic command-line tool (`wd-ctrl`) to interact with the broker
 * Simple C library (`libwd-client`) to register clients and send heartbeats
-* Fail-safe: If the broker crashes or a client misses its deadline, the system will reboot
+* Fail-safe design, if the broker crashes or a client misses its deadline, the system will reboot
 * Written with portability and embedded systems in mind
 
 ## Changelog
@@ -156,14 +160,14 @@ $ wd-ctrl --help
 Usage: wd-ctrl [OPTIONS] status | unregister <clientID|name>
 
 Options:
-  --help                    Show this help message and exit
-  --version                 Show version information and exit
-  --socket-path <path>      Use custom socket path (default: /run/wd-broker.sock)
+  --help                      Show this help message and exit
+  --version                   Show version information and exit
+  --socket-path <path>        Use custom socket path (default: /run/wd-broker.sock)
 
 Commands:
-  status                    Show the current status of the broker and all clients
-  unregister <clientID|name>
-                            Unregister a client by its ID or name
+  reboot                      Trigger the reboot failsafe 
+  status                      Show the current wd-broker status
+  unregister <clientID|name>. Unregister a client by its ID or name
 
 Examples:
   wd-ctrl status
@@ -204,6 +208,17 @@ Client 'beta' unregistered successfully.
 
 * You can use the clients name or it's clientID to unregister it from the broker. 
 * You can also unregister announced clients (those defined in the config file but not yet registered). However, if strict_clients is enabled, they can only re-register after a broker restart.
+
+### Example on how to trigger the reboot failsafe
+
+```bash
+$ sudo wd-ctrl reboot
+Reboot failsafe activated, timeout: 60 seconds.
+``` 
+
+* This command is only available to the root user and will configure the hardware watchdog to trigger a reboot after the defined timeout (default: 60 seconds).
+* The timeout can only be configured in the configuration file (`reboot_timeout_s`).
+* The configred value is printed to the console, so you can see how long the system will wait before rebooting.
 
 ## libwd-client
 

@@ -44,16 +44,16 @@
 #define arraysize(x) (sizeof(x) / sizeof((x)[0]))
 
 void print_help(void) {
-    printf("Usage: wd-ctrl [OPTIONS] status | unregister <clientID|name>\n");
+    printf("Usage: wd-ctrl [OPTIONS] <command>\n");
     printf("\nOptions:\n");
-    printf("  --help                    Show this help message and exit\n");
-    printf("  --version                 Show version information and exit\n");
-    printf("  --socket-path <path>      Use custom socket path (default: %s)\n",
+    printf("  --help                      Show this help message and exit\n");
+    printf("  --version                   Show version information and exit\n");
+    printf("  --socket-path <path>        Use custom socket path (default: %s)\n",
            SOCKET_PATH_DEFAULT);
     printf("\nCommands:\n");
-    printf("  status                    Show the current status of the broker and all clients\n");
-    printf("  unregister <clientID|name>\n");
-    printf("                            Unregister a client by its ID or name\n");
+    printf("  reboot                      Trigger the reboot failsafe\n");
+    printf("  status                      Show the current wd-broker status\n");
+    printf("  unregister <clientID|name>  Unregister a client by its ID or name\n");
     printf("\nExamples:\n");
     printf("  wd-ctrl status\n");
     printf("  wd-ctrl unregister 4f3c0d9e8a1b4f21\n");
@@ -174,7 +174,17 @@ int main(int argc, char *argv[]) {
         line = strtok_r(NULL, "\n", &saveptr);
     }
 
-    if (strcmp(argv[optind], "status") == 0) {
+    if (strcmp(argv[optind], "reboot") == 0) {
+        send_and_receive(socket_path, CMD_REBOOT, buf, sizeof(buf));
+        if (strncmp(buf, "OK", 2) == 0) {
+            int seconds = atoi(buf + 3);
+            printf("Reboot failsafe activated, timeout: %d seconds.\n", seconds);
+        } else {
+            fatal_error("Unexpected server response.\n");
+            return EXIT_FAILURE;
+        }
+    }
+    else if (strcmp(argv[optind], "status") == 0) {
         for (int i = 0; i < line_count; ++i) {
             if (strchr(lines[i], '=') != NULL) {
                 char key[64], val[64];

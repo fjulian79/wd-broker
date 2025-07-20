@@ -53,20 +53,23 @@
 #include "config.h"
 #include "wd-client.h"
 
-#define STR_HELPER(x)              #x
-#define STR(x)                     STR_HELPER(x)
-#define DEFAULT_CONFIG_PATH        SYSCONFDIR "/wd-broker.conf"
-#define WD_HW_TIMEOUT_DEFAULT_S    10
-#define WD_HW_TIMEOUT_MIN_S        WD_HW_TIMEOUT_DEFAULT_S
-#define WD_HW_TIMEOUT_MAX_S        60
-#define WD_CLIENT_NAME_FMT_LEN_STR "63" // cant use (CLIENT_NAME_LEN - 1) here
-#define WD_REGISTER_SCANF_FORMAT   "%" WD_CLIENT_NAME_FMT_LEN_STR "s %u %15s %15s"
-#define WD_CLIENTID_FMT_LEN        16 // Must be a number cant use CLIENTID_LEN - 1
-#define WD_CLIENTID_FMT_STR        STR(WD_CLIENTID_FMT_LEN)
-#define WD_CLIENTID_SCANF_FORMAT   "%" WD_CLIENTID_FMT_STR "s %15s"
-#define WD_CLIENT_IDENTIFIED       0
-#define WD_CLIENT_PID_MISMATCH     -1
-#define WD_CLIENT_NOT_FOUND        -2
+#define STR_HELPER(x)               #x
+#define STR(x)                      STR_HELPER(x)
+#define DEFAULT_CONFIG_PATH         SYSCONFDIR "/wd-broker.conf"
+#define WD_HW_TIMEOUT_DEFAULT_S     10
+#define WD_HW_TIMEOUT_MIN_S         WD_HW_TIMEOUT_DEFAULT_S
+#define WD_HW_TIMEOUT_MAX_S         60
+#define WD_REBOOT_TIMEOUT_DEFAULT_S 60
+#define WD_REBOOT_TIMEOUT_MIN_S     10
+#define WD_REBOOT_TIMEOUT_MAX_S     300
+#define WD_CLIENT_NAME_FMT_LEN_STR  "63" // cant use (CLIENT_NAME_LEN - 1) here
+#define WD_REGISTER_SCANF_FORMAT    "%" WD_CLIENT_NAME_FMT_LEN_STR "s %u %15s %15s"
+#define WD_CLIENTID_FMT_LEN         16 // Must be a number cant use CLIENTID_LEN - 1
+#define WD_CLIENTID_FMT_STR         STR(WD_CLIENTID_FMT_LEN)
+#define WD_CLIENTID_SCANF_FORMAT    "%" WD_CLIENTID_FMT_STR "s %15s"
+#define WD_CLIENT_IDENTIFIED        0
+#define WD_CLIENT_PID_MISMATCH      -1
+#define WD_CLIENT_NOT_FOUND         -2
 
 typedef struct {
     int         flag;
@@ -87,6 +90,7 @@ typedef struct {
 typedef struct {
     char socket_path[WD_CLIENT_SOCKPATH_LEN];
     int  wd_timeout_s;
+    int  reboot_timeout_s;
     bool strict_clients;
     bool unique_clients;
 } wd_config_t;
@@ -103,6 +107,7 @@ static const BootFlag bootflags[] = {
 
 wd_config_t   config;
 volatile bool running = true;
+bool          reboot = false;
 bool          daemonize = false;
 
 void print_help(void) {
@@ -296,6 +301,7 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
     memset(&config, 0, sizeof(config));
     strncpy(config.socket_path, SOCKET_PATH_DEFAULT, sizeof(config.socket_path));
     config.wd_timeout_s = WD_HW_TIMEOUT_DEFAULT_S;
+    config.reboot_timeout_s = WD_REBOOT_TIMEOUT_DEFAULT_S;
     config.strict_clients = false;
     config.unique_clients = false;
 
@@ -324,6 +330,14 @@ void parse_config(const char *filename, client_t *clients, size_t max_clients) {
                     fatal_error("Invalid watchdog timeout set in line %d. Must be between %d and "
                                 "%d seconds.",
                                 line_num, WD_HW_TIMEOUT_MIN_S, WD_HW_TIMEOUT_MAX_S);
+                }
+            } else if (strcmp(t_key, "reboot_timeout_s") == 0) {
+                config.reboot_timeout_s = atoi(t_val);
+                if (config.reboot_timeout_s < WD_REBOOT_TIMEOUT_MIN_S || 
+                    config.reboot_timeout_s > WD_REBOOT_TIMEOUT_MAX_S) {
+                    fatal_error("Invalid reboot timeout set in line %d. Must be between %d and "
+                                "%d seconds.",
+                                line_num, WD_REBOOT_TIMEOUT_MIN_S, WD_REBOOT_TIMEOUT_MAX_S);
                 }
             } else if (strcmp(t_key, "strict_clients") == 0) {
                 if (strcmp(t_val, "true") == 0) {
@@ -713,6 +727,23 @@ void handle_command(int client_sock, client_t *clients) {
                 write_str(client_sock, "ERROR unknown clientID\n");
                 return;
         }
+    } else if (strncmp(buf, CMD_REBOOT, strlen(CMD_REBOOT)) == 0) {
+        char extra[16] = {0};
+        if (sscanf(buf + strlen(CMD_REBOOT), " %15s", extra) == 1) {
+            write_str(client_sock, "ERROR invalid syntax\n");
+            return;
+        }
+
+        if (creds.uid != 0) {
+            write_str(client_sock, "ERROR no permission\n");
+            log_message(LOG_WARNING, "Client with PID %d tried to activate reboot failsafe", (int)creds.pid);
+            return;
+        }
+
+        write_str(client_sock, "OK, %d\n", config.reboot_timeout_s);
+        running = false;
+        reboot = true; 
+        log_message(LOG_NOTICE, "Reboot failsafe requested by PID %d", (int)creds.pid);
 
     } else if (strncmp(buf, CMD_STATUS, strlen(CMD_STATUS)) == 0) {
         char   extra[32];
@@ -737,6 +768,8 @@ void handle_command(int client_sock, client_t *clients) {
                            SOCKET_PROT_VERSION);
         offset +=
             snprintf(msg + offset, sizeof(msg) - offset, "wd_timeout_s=%d\n", config.wd_timeout_s);
+        offset += snprintf(msg + offset, sizeof(msg) - offset, "reboot_timeout_s=%d\n",
+                           config.reboot_timeout_s);
         offset += snprintf(msg + offset, sizeof(msg) - offset, "strict_clients=%s\n",
                            config.strict_clients ? "true" : "false");
         offset += snprintf(msg + offset, sizeof(msg) - offset, "unique_clients=%s\n",
@@ -1119,18 +1152,37 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    if (reboot) {
+        if (watchdog_fd != -1) {
+            if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &config.reboot_timeout_s) == -1) {
+                log_message(LOG_ERR, "Failed to set watchdog reboot timeout: %s",
+                            strerror(errno));
+            }
+            if (write(watchdog_fd, "\0", 1) != 1) {
+                fatal_error("Failed to feed watchdog: %s", strerror(errno));
+            }
+            log_message(LOG_NOTICE, "Reboot failsafe activated, hardware watchdog will trigger reboot in %d seconds",
+                    config.reboot_timeout_s);
+        } else {
+            log_message(LOG_NOTICE, "No hardware watchdog available, reboot failsafe not active (reboot_timeout_s: %d seconds)",
+                        config.reboot_timeout_s);
+        }
+    }
+
     log_message(LOG_INFO, "Exiting wd-broker...");
 
     if (watchdog_fd != -1) {
-        /* Legacy way */
-        const char c = 'V';
-        if (write(watchdog_fd, &c, 1) != 1) {
-            log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
-        }
-        /* Modern way */
-        int flags = WDIOS_DISABLECARD;
-        if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
-            log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
+        if (!reboot){
+            /* Legacy way */
+            const char c = 'V';
+            if (write(watchdog_fd, &c, 1) != 1) {
+                log_message(LOG_ERR, "Failed to stop watchdog: %s", strerror(errno));
+            }
+            /* Modern way */
+            int flags = WDIOS_DISABLECARD;
+            if (ioctl(watchdog_fd, WDIOC_SETOPTIONS, &flags) == -1) {
+                log_message(LOG_ERR, "Failed to disable watchdog: %s", strerror(errno));
+            }
         }
         close(watchdog_fd);
         watchdog_fd = -1;
