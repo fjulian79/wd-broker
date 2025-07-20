@@ -206,6 +206,12 @@ class TestBroker:
         except Exception:
             pass  # silent cleanup on object destruction
 
+def is_root():
+    return os.geteuid() == 0
+
+def skip(msg):
+    log_info(f"Skipping test: {msg}")
+    sys.exit(0)
 
 def fail(msg):
     log_error(msg)
