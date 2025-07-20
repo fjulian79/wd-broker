@@ -944,10 +944,10 @@ int main(int argc, char *argv[]) {
 
     /* Set socket permissions to the service user and group */
     if (chmod(config.socket_path, 0660) == -1) {
-        fatal_errno("Could not set permissions on socket file");
+        fatal_errno("Could not set socket permissions");
     }
     if (started_as_root && chown(config.socket_path, pw->pw_uid, pw->pw_gid) == -1) {
-        fatal_errno("Could not set permissions on socket file");
+        fatal_errno("Could not set socket ownership");
     }
 
     /* Opening the watchdog device is not mandatory, but if it is enabled, we need to
@@ -965,6 +965,7 @@ int main(int argc, char *argv[]) {
         if (watchdog_fd == -1) {
             fatal_error("Failed to open /dev/watchdog: %s\n", strerror(errno));
         }
+        log_message(LOG_INFO, "Opened hardware watchdog device /dev/watchdog");
         if (ioctl(watchdog_fd, WDIOC_SETTIMEOUT, &config.wd_timeout_s) == -1) {
             fatal_error("Failed to set watchdog timeout: %s\n", strerror(errno));
         }
@@ -1009,7 +1010,6 @@ int main(int argc, char *argv[]) {
                 config.socket_path);
     if (watchdog_fd != -1) {
         int bootstatus = 0;
-        log_message(LOG_INFO, "Opened hardware watchdog device /dev/watchdog");
         log_message(LOG_INFO, "Hardware watchdog timeout: %d seconds", config.wd_timeout_s);
         if (ioctl(watchdog_fd, WDIOC_GETBOOTSTATUS, &bootstatus) == -1) {
             log_message(LOG_ERR, "Failed to get boot status: %s", strerror(errno));

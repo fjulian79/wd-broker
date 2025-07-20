@@ -16,7 +16,7 @@ dnl limitations under the License.
 dnl
 dnl Source repository: https://github.com/fjulian79/wd-broker
 
-AC_INIT([wd-broker], [2.0.0-rc5], [https://github.com/fjulian79/wd-broker/issues])
+AC_INIT([wd-broker], [2.0.0], [https://github.com/fjulian79/wd-broker/issues])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
 LT_INIT

@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.0] - 2025-07-21
+
+### Fixed
+ - Improved error output while parsing the config file.
+ - Moved 'opened watchdog' log message to the correct place in the code.
+ - Fixed log messages when setting socket permissions and ownership.
+ - Added testcases 
+   - test-023-unique-clients.py
+   - test-024-unique-strict-clients.py
+   - test-201-config-file.py
+ - Improved test framework
+
+## [2.0.0-rc5] - 2025-07-20
+
+### Fixed
+- Set watchdog feed interval to wd_timeout / 2 to improve robustness.
+- Replaced potentially blocking read() in wd_client_ping with read_with_timeout().
+- Fix off-by-one error in configuration parser preveting usage of maximum number of clients.
+- Fixed WD_REGISTER_SCANF_FORMAT to expect an unsigned int as timeout value.
+- Fixed unintended fall trough while parsing command line options.
+- Improved make_clientID() by using random data more efficently.
+- Improved trim() function for robustness and empty string handling
+- Improved documentation.
+
 ## [2.0.0-rc4] - 2025-05-22
 
 ### Added
