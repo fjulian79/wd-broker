@@ -1,6 +1,16 @@
 # Changelog
 
-## [2.0.0] - 2025-07-21
+## [2.1.0] - 2025-07-20
+
+### Added
+- Added reboot failsafe functionality to the broker daemon and the `wd-ctrl` CLI tool.
+  - 'sudo wd-ctrl reboot' activates the reboot failsafe.
+  - The reboot timeout can be configured in the config file, default is 60 seconds.
+  - If activated, the broker damon will reconfigure the watchdog device to reboot the system after the configured timeout and quit.
+  - Purpose of the reboot failsafe is to ensure that the system reboots even if it gets stuck while sutting down.
+- Updated the documentation to reflect the new reboot failsafe functionality.
+
+## [2.0.0] - 2025-07-20
 
 ### Fixed
  - Improved error output while parsing the config file.
@@ -12,7 +22,7 @@
    - test-201-config-file.py
  - Improved test framework
 
-## [2.0.0-rc5] - 2025-07-20
+## [2.0.0-rc5] - 2025-06-04
 
 ### Fixed
 - Set watchdog feed interval to wd_timeout / 2 to improve robustness.
