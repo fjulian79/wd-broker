@@ -6,22 +6,28 @@ For details on the STRIDE methodology, see [Wikipedia – STRIDE model](https://
 
 ## System Overview
 
-`wd-broker` is a user-space daemon responsible for supervising access to the hardware watchdog on embedded Linux systems. It listens on a Unix Domain Socket (UDS) for client applications that must:
+`wd-broker` is a user-space daemon responsible for supervising access to the hardware watchdog on embedded Linux systems. It listens on a Unix Domain Socket (UDS) for:
 
-- Register themselves with a name and timeout, (if configured) within a given time limit
-- Once registered, periodically ping the broker to prove their fitness
-- Deregister when shutting down cleanly
+- Client applications that must:
+  - Register themselves with a name and timeout, (if configured) within a given time limit
+  - Once registered, periodically ping the broker to prove their fitness
+  - Deregister when shutting down cleanly
+  - If any ..
+    - active client fails to ping within its declared timeout
+    - announced client fails to register within the configured time limit
+    .. the broker will stop feeding the hardware watchdog, resulting in a system reboot.
 
-If any ..
-- active client fails to ping within its declared timeout
-- announced client fails to register within the configured time limit
-
-.. the broker will stop feeding the hardware watchdog, resulting in a system reboot.
+- Maintenance requests to:
+  - Report the current state and list of registered clients (only available to root)
+  - Unregister requests from registered clients to unregister themselves
+  - Unregister requests from root to unregister any client
+  - Provide a reboot failsafe mode guard system reboot if requested by root
 
 ## Assumptions
 
 - Only users in a dedicated group and root can access the Unix socket.
 - It is acceptable for `root` to be able to unregister any client, assuming that root already has full system control. This is relevant during development and test scenarios, and acceptable in production as well.
+- It is acceptable for `root` to be able to reboot the system at any time, even if clients are registered. root can do so even without `wd-broker`, so this is not considered a security risk.
 - Clients are responsible for managing their registration state securely.
 - The system assumes the integrity of the operating system and the `wd-clients` group. If a member of the `wd-clients` group is compromised, the broker cannot prevent misuse.
 - The system should allow reboots in case of actual application failures (e.g., deadlocks), but resist intentional misuse.
@@ -30,11 +36,10 @@ If any ..
 ## Privilege Management
 
 `wd-broker` requires elevated privileges only during startup:
-
 - To open `/dev/watchdog`, which typically requires root
 - Depending on the actual socket path, to create the Unix socket with the correct permissions and group ownership
 
-After completing these steps, the broker **drops privileges** using `setgid()` and `setuid()` to run as an unprivileged user within the `wd-clients` group. This ensures that even if the broker process is compromised during runtime, the system impact is limited.
+After completing these steps, the broker **drops privileges** using `setgid()` and `setuid()` to run as an unprivileged service user within the `wd-clients` group. This ensures that even if the broker process is compromised during runtime, the system impact is limited.
 
 To avoid disrupting a running instance, the broker performs a safety check before binding to the socket path. If the socket already exists, it attempts to connect to it. If a process is actively listening, the broker aborts with a clear error message. If the connection fails (e.g., with ECONNREFUSED), the socket is considered stale, and the broker may safely remove and recreate it.
 
@@ -53,7 +58,8 @@ This approach reduces the attack surface and aligns with least-privilege princip
 - Each client is identified by its `name` and `pid` during registration resulting in a unique `clientID` which is used for all further communication.
 - The broker verifies the `pid` of the process sending commands (e.g., `PING`, `UNREGISTER`) to ensure it matches the PID of the process that originally registered the `clientID`.
 - The broker runs with dropped privileges after initialization to reduce spoofing risks if exploited.
-- Since the broker cannot enforce secure handling of client state on the client side, a compromised client can continue to interact with the broker using its own `clientID`. This limitation is accepted by design: all members of the `wd-clients` group are considered trusted, and authentication serves as a lightweight safeguard against accidental misuse or implementation errors.
+
+Since the broker cannot enforce secure handling of client state on the client side, a compromised client can continue to interact with the broker using its own `clientID`. This limitation is accepted by design: all members of the `wd-clients` group are considered trusted, and authentication serves as a lightweight safeguard against accidental misuse or implementation errors.
 
 ---
 
@@ -120,12 +126,18 @@ Repudiation is not applicable. Clients do not authenticate, and the broker has n
 - When `unique_clients` or `strict_clients` is enabled, a malicious client could register with the same name as a legitimate client, causing the broker to reject the legitimate client.
 - Overloading the socket to block legitimate clients.
 - Overwriting an active socket used by a running instance.
+- Unauthorized request for reboot failsafe mode to cause a system reboot.
 
 **Mitigations:**
 
-- Only processes belonging to the `wd-clients` group or `root` can access the Unix domain socket. This prevents unauthorized users from interacting with the broker. 
+- Only processes belonging to the `wd-clients` group or `root` can access the Unix domain socket. 
+  - This prevents unauthorized users from interacting with the broker. 
   - As a result no extra mitigation is planned against malicious clients occupying client names of legitimate clients when `unique_clients` or `strict_clients` is enabled.
   - This is considered a design choice, as all members of the `wd-clients` group are trusted.
+- The broker verifies that only root is allowed to:
+  - Unregister any client.
+  - Request the current state of the broker.
+  - Activate the reboot failsafe mode.
 - The configuration file is owned by a dedicated service user (e.g., `wd-broker`) and is not writable by other users (`chmod 640` or stricter). This prevents unauthorized modifications.
 - On startup, the broker checks config file ownership and permissions, refusing to run if they are too permissive. This is accepted as a potential risk, but modifications to config file depend on appropriate privileges. If the attacker has such privileges, they can already do significant damage.
 
@@ -136,8 +148,10 @@ Repudiation is not applicable. Clients do not authenticate, and the broker has n
 **Threat:** Unauthorized user gains higher access via broker.
 
 **Risks:**
-
-- Misusing broker to gain root access or write to `/dev/watchdog`.
+- If 'wd-broker' is compromised, the attacker is assumed to 
+  - Have access to the hardware watchdog `/dev/watchdog`
+  - Can cause a reboot at will.
+  - May unregister any client.
 
 **Mitigations:**
 
@@ -172,4 +186,4 @@ By explicitly defining threats using STRIDE, the design remains transparent and 
 
 ---
 
-*Last updated: 2025-05-19*
+*Last updated: 2025-07-20*
